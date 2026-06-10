@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pic PR · Forward Planner</title>
+<link rel="icon" href="img/picpr-logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- Password gate -->
+  <div class="gate" id="gate">
+    <div class="gate-box">
+      <img src="img/picpr-logo.png" alt="Pic PR">
+      <h1>Forward Planner</h1>
+      <input type="password" id="gate-input" placeholder="Enter password" autofocus>
+      <button id="gate-submit">Unlock</button>
+      <p class="gate-error" id="gate-error"></p>
+    </div>
+  </div>
+
+  <div class="page">
+    <header class="masthead">
+      <div class="masthead-left">
+        <img src="img/picpr-logo.png" alt="Pic PR">
+        <span class="masthead-divider"></span>
+        <div>
+          <div class="masthead-name">Forward Planner</div>
+          <div class="masthead-sub">Own what's coming · 6–8 weeks ahead</div>
+        </div>
+      </div>
+      <div class="masthead-actions">
+        <label class="email-check"><input type="checkbox" id="email-checkbox"> Email it</label>
+        <button id="run-btn" class="primary-btn">Run the briefing</button>
+      </div>
+    </header>
+
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="briefing">Briefing</button>
+      <button class="tab" data-tab="archive">Archive</button>
+      <button class="tab" data-tab="calendar">Calendar</button>
+      <button class="tab" data-tab="clients">Clients</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </nav>
+
+    <main>
+      <section class="panel active" id="panel-briefing">
+        <div id="run-status" class="run-status hidden"></div>
+        <div id="briefing-view">
+          <p class="empty-note">No briefing loaded yet. Hit "Run the briefing" to generate one now, or open a past one from the Archive.</p>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-archive">
+        <div id="archive-list"><p class="empty-note">Loading…</p></div>
+      </section>
+
+      <section class="panel" id="panel-calendar">
+        <div class="panel-head">
+          <p class="panel-blurb">The curated calendar — the backbone of every briefing. Recurring events use <code>MM-DD</code> (e.g. <code>10-10</code> for World Mental Health Day); one-offs use <code>YYYY-MM-DD</code>. Edits save for the whole team instantly.</p>
+          <button id="add-event-btn" class="secondary-btn">+ Add event</button>
+        </div>
+        <div id="event-form" class="edit-form hidden"></div>
+        <div id="events-table"></div>
+      </section>
+
+      <section class="panel" id="panel-clients">
+        <div class="panel-head">
+          <p class="panel-blurb">The roster the briefing matches against. Tone sharpens the angles, the avoid line is law, prospects get bolder thinking. Untick "active" to rest a client without deleting them.</p>
+          <button id="add-client-btn" class="secondary-btn">+ Add client</button>
+        </div>
+        <div id="client-form" class="edit-form hidden"></div>
+        <div id="clients-table"></div>
+      </section>
+
+      <section class="panel" id="panel-settings">
+        <div class="settings-grid">
+          <div class="settings-card">
+            <h3>Email</h3>
+            <label class="form-label" for="set-recipients">Recipients (comma separated)</label>
+            <input id="set-recipients" type="text">
+            <label class="form-label" for="set-from">From address</label>
+            <input id="set-from" type="text">
+            <p class="hint">Until picpr.com is verified as a domain in Resend, keep the from address as onboarding@resend.dev and note Resend will only deliver to the email on your Resend account. Verify the domain (Resend → Domains → Add) to unlock pr@ and am@.</p>
+          </div>
+          <div class="settings-card">
+            <h3>Engine</h3>
+            <label class="toggle-row"><input type="checkbox" id="set-livesearch"> Live web search for freshly announced events</label>
+            <p class="hint">Adds 15–30 seconds and a few pence per run. Catches tour dates, fixtures and report publications the curated calendar can't know about.</p>
+          </div>
+          <div class="settings-card">
+            <h3>Monday automation</h3>
+            <p class="hint">In cron-job.org create a job with this URL (GET), scheduled Mondays 07:00 Europe/London. Replace YOUR-SECRET with the CRON_SECRET you set in Netlify's environment variables.</p>
+            <code class="cron-url" id="cron-url"></code>
+          </div>
+        </div>
+        <button id="save-settings-btn" class="primary-btn">Save settings</button>
+        <span id="settings-saved" class="saved-note"></span>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span>Pic PR Creative Suite · Forward Planner</span>
+      <span>Spot. Spark. <em>Create.</em></span>
+    </footer>
+  </div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
