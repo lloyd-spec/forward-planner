@@ -6,6 +6,35 @@
 const PASSWORD = 'PicPR2026';
 const $ = (sel) => document.querySelector(sel);
 
+// Any script error becomes a visible banner instead of a silent death.
+window.addEventListener('error', (e) => {
+  try {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;bottom:12px;left:12px;right:12px;background:#b3403a;color:#fff;padding:11px 15px;border-radius:9px;z-index:999;font:13px Inter,sans-serif;';
+    d.textContent = 'Script error: ' + e.message + (e.lineno ? ' (line ' + e.lineno + ')' : '');
+    document.body.appendChild(d);
+  } catch (err) {}
+});
+
+// The Run button is wired here, at the top, before anything that could
+// crash during load. Delegated, so it works no matter what happens below.
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'run-btn') {
+    try {
+      const modal = $('#run-modal');
+      const list = $('#run-client-list');
+      if (!modal || !list || !$('#run-all-clients')) { startRun(null); return; }
+      const active = (window.__clients || clients || []).filter(c => c.active !== false);
+      list.innerHTML = active.map(c => `<label class="run-client-row"><input type="checkbox" value="${escapeHtml(c.name)}" checked> ${escapeHtml(c.name)}${c.prospect ? ' <span class="tag">PROSPECT</span>' : ''}</label>`).join('');
+      $('#run-all-clients').checked = true;
+      list.classList.add('hidden');
+      modal.classList.remove('hidden');
+    } catch (err) {
+      alert('Run button error: ' + err.message);
+    }
+  }
+});
+
 let events = [];
 const PROVENANCES = ['official', 'charity', 'cultural', 'industry', 'commercial'];
 let activeProv = new Set(PROVENANCES);
@@ -357,14 +386,8 @@ document.addEventListener('click', (e) => {
 });
 
 // ============ Run the engine ============
-$('#run-btn').addEventListener('click', () => {
-  const list = $('#run-client-list');
-  const active = clients.filter(c => c.active !== false);
-  list.innerHTML = active.map(c => `<label class="run-client-row"><input type="checkbox" value="${escapeHtml(c.name)}" checked> ${escapeHtml(c.name)}${c.prospect ? ' <span class="tag">PROSPECT</span>' : ''}</label>`).join('');
-  $('#run-all-clients').checked = true;
-  list.classList.add('hidden');
-  $('#run-modal').classList.remove('hidden');
-});
+// (Run button is wired at the top of this file.)
+
 
 document.addEventListener('click', (e) => {
   if (e.target.id === 'run-modal-close' || e.target.id === 'run-modal') $('#run-modal').classList.add('hidden');
