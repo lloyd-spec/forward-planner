@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=5">
+<link rel="stylesheet" href="css/styles.css?v=7">
 </head>
 <body>
 
@@ -66,8 +66,13 @@
       <section class="panel" id="panel-calendar">
         <div class="panel-head">
           <p class="panel-blurb">The curated calendar — the backbone of every briefing. Recurring events use <code>MM-DD</code> (e.g. <code>10-10</code> for World Mental Health Day); one-offs use <code>YYYY-MM-DD</code>. Edits save for the whole team instantly.</p>
-          <button id="add-event-btn" class="secondary-btn">+ Add event</button>
+          <div class="calendar-tools">
+            <input type="text" id="event-search" placeholder="Search the calendar...">
+            <button id="add-event-btn" class="secondary-btn">+ Add event</button>
+          </div>
         </div>
+        <div id="prov-filters" class="prov-filters"></div>
+        <div id="ideate-panel" class="ideate-panel hidden"></div>
         <div id="event-form" class="edit-form hidden"></div>
         <div id="events-table"></div>
       </section>
@@ -96,6 +101,7 @@
           <div class="settings-card">
             <h3>Engine</h3>
             <label class="toggle-row"><input type="checkbox" id="set-livesearch"> Live web search for freshly announced events</label>
+            <label class="toggle-row" style="margin-top:10px;"><input type="checkbox" id="set-commercial"> Include commercial and invented days in briefings (social-first only)</label>
             <p class="hint">Adds 15–30 seconds and a few pence per run. Catches tour dates, fixtures and report publications the curated calendar can't know about.</p>
           </div>
           <div class="settings-card">
@@ -115,6 +121,6 @@
     </footer>
   </div>
 
-<script src="js/app.js?v=5"></script>
+<script src="js/app.js?v=7"></script>
 </body>
 </html>

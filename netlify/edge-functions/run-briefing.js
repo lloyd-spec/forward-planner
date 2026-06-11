@@ -143,7 +143,7 @@ function buildComposePrompt(windowEvents, freshEvents, clients) {
   }).join("\n");
 
   const evLines = windowEvents.map(e =>
-    `- [${e.ongoing ? "ONGOING" : e.bucket.toUpperCase()}] ${e.niceDate}${e.ongoing ? "" : " (" + e.daysOut + " days out)"}: ${e.event} — ${e.description}${e.relevantFor ? " Typically suits: " + e.relevantFor + "." : ""}${e.notes ? " Hooks: " + e.notes : ""}`
+    `- [${e.ongoing ? "ONGOING" : e.bucket.toUpperCase()}]${e.provenance ? "[" + e.provenance.toUpperCase() + "]" : ""} ${e.niceDate}${e.ongoing ? "" : " (" + e.daysOut + " days out)"}: ${e.event} — ${e.description}${e.relevantFor ? " Typically suits: " + e.relevantFor + "." : ""}${e.notes ? " Hooks: " + e.notes : ""}`
   ).join("\n");
 
   const freshLines = freshEvents.length
@@ -168,21 +168,22 @@ ${evLines}${freshLines}
 
 YOUR JOB:
 1. AUGMENT THE CALENDAR FROM YOUR OWN KNOWLEDGE. Before choosing, add any awareness days, weeks and months falling in the window that the calendar misses: UN international days, established UK awareness weeks and months, and quirky days that justify social-first creative. VET EVERYTHING FOR UK RELEVANCE: where UK and US dates differ use the UK date (Mothering Sunday is not US Mother's Day), and exclude US-only observances (Thanksgiving, US Labor Day and similar) unless they have genuine UK media traction. Only include dates you are confident of; if unsure of the exact date, skip it. Treat anything you add exactly like a calendar event.
-2. Pick the events with genuine client fit. Quality over coverage: a sharp briefing of 12-16 events beats a phone book. Skip events with no honest match. Ongoing months and weeks are live opportunities, not missed ones; suggest the mid-period moment that still works.
-3. For each chosen event, name 1-3 best-fit clients. Every match is a WORKED-UP IDEA in the Pic PR house anatomy, not a positioning line:
+2. PROVENANCE HIERARCHY. Events carry a provenance tag: OFFICIAL (UN, WHO, government), CHARITY, CULTURAL, INDUSTRY (sector bodies; the care and hospitality weeks here are first-class for this roster) and COMMERCIAL (brand-invented or internet-origin days). COMMERCIAL days may ONLY appear as social-first ideas, never lead a section and never crowd out a stronger moment; one or two per briefing at most. When you augment from your own knowledge, apply the same classification and exclude pure brand inventions with no genuine UK media traction.
+3. Pick the events with genuine client fit. Quality over coverage: a sharp briefing of 12-16 events beats a phone book. Skip events with no honest match. Ongoing months and weeks are live opportunities, not missed ones; suggest the mid-period moment that still works.
+4. For each chosen event, name 1-3 best-fit clients. Every match is a WORKED-UP IDEA in the Pic PR house anatomy, not a positioning line:
    - "idea": a short concept name, in quotes when it earns a name (most should)
    - "concept": 2-4 sentences. The concrete mechanic someone can picture (what happens, who is in the frame, what the photo or film shows), and a clause on why it works for this client at this moment
    - "headline": an example PR headline in house style, the line a journalist might actually run. No em dashes, no colons-for-drama unless natural
    - "media": named target desks and outlets, concrete (e.g. "regional broadcast, BBC Radio Stoke, Care Home Professional, lifestyle pages of the i")
    - "action": the specific thing to do THIS WEEK given the lead time
-4. VARIETY IS MANDATORY. Across the whole briefing mix photo-led stunts, partnerships, community events, data and survey stories, resident or staff-led human stories and social-first series. Plain expert comment may carry AT MOST a quarter of all matches, and never two matches in a row. If you catch yourself writing "offer expert comment", find the idea instead.
-5. Social-first days earn their place when a client could own them with quick, charming creative. For those, "concept" describes the actual content (what the post or reel literally shows) and "media" can simply read "Social-first". The briefing should always carry a handful.
-6. Where the fit allows, make at least one match per event a bolder swing; prospects always get one. A good idea makes someone want to paste it straight into the Idea Jacker and build it out.
-7. Respect every AVOID line absolutely.
-8. Events you considered but skipped go in "alsoNoted" as bare names so the team can see the full calendar at a glance.
-9. DATE FIDELITY: copy each item's date field exactly as provided in the calendar line. Never invent, adjust or "correct" a weekday or date.
-10. Respect the bucket tags: an event tagged ACT belongs in the act section, PLAN in plan, RADAR or ONGOING in radar. Do not promote or demote events between sections.
-11. Write a 2-3 sentence intro: what matters most this week and why.
+5. VARIETY IS MANDATORY. Across the whole briefing mix photo-led stunts, partnerships, community events, data and survey stories, resident or staff-led human stories and social-first series. Plain expert comment may carry AT MOST a quarter of all matches, and never two matches in a row. If you catch yourself writing "offer expert comment", find the idea instead.
+6. Social-first days earn their place when a client could own them with quick, charming creative. For those, "concept" describes the actual content (what the post or reel literally shows) and "media" can simply read "Social-first". The briefing should always carry a handful.
+7. Where the fit allows, make at least one match per event a bolder swing; prospects always get one. A good idea makes someone want to paste it straight into the Idea Jacker and build it out.
+8. Respect every AVOID line absolutely.
+9. Events you considered but skipped go in "alsoNoted" as bare names so the team can see the full calendar at a glance.
+10. DATE FIDELITY: copy each item's date field exactly as provided in the calendar line. Never invent, adjust or "correct" a weekday or date.
+11. Respect the bucket tags: an event tagged ACT belongs in the act section, PLAN in plan, RADAR or ONGOING in radar. Do not promote or demote events between sections.
+12. Write a 2-3 sentence intro: what matters most this week and why.
 
 Return ONLY valid JSON, no other text, exactly this shape:
 {"intro": "...", "sections": [{"key": "act", "title": "Act this week", "items": [{"event": "...", "date": "Mon 20 July", "daysOut": 40, "why": "one line on the moment itself", "matches": [{"client": "...", "idea": "\"Concept Name\"", "concept": "the mechanic and why it works, 2-4 sentences", "headline": "Example PR headline in house style", "media": "named target desks and outlets", "action": "what to do this week"}]}]}, {"key": "plan", "title": "Start planning", "items": []}, {"key": "radar", "title": "On the radar", "items": []}], "alsoNoted": ["...", "..."]}`;
@@ -343,7 +344,11 @@ export default async function handler(request) {
         send({ type: "status", message: "Loading the calendar and client roster..." });
         const [events, clients, settings] = await Promise.all([getEvents(), getClients(), getSettings()]);
 
-        const windowEvents = computeWindow(events, settings.windowDays || 56);
+        let allEvents = events;
+        if (settings.includeCommercial === false) {
+          allEvents = events.filter(e => e.provenance !== "commercial");
+        }
+        const windowEvents = computeWindow(allEvents, settings.windowDays || 56);
         send({ type: "status", message: windowEvents.length + " events in the next 8 weeks." });
 
         let thinWarning = "";
@@ -408,7 +413,10 @@ export default async function handler(request) {
           intro: composed.intro || "",
           thinWarning,
           sections: composed.sections || [],
-          alsoNoted: composed.alsoNoted || [],
+          alsoNoted: (() => {
+            const all = composed.alsoNoted || [];
+            return all.length > 30 ? all.slice(0, 30).concat(["plus " + (all.length - 30) + " more on the calendar"]) : all;
+          })(),
           freshCount: fresh.length,
           emailed: false
         };

@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = {
   recipients: ["pr@picpr.com", "am@picpr.com"],
   fromAddress: "Pic PR Forward Planner <onboarding@resend.dev>",
   liveSearch: true,
+  includeCommercial: true,
   windowDays: 56
 };
 

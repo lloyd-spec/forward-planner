@@ -7,6 +7,8 @@ const PASSWORD = 'PicPR2026';
 const $ = (sel) => document.querySelector(sel);
 
 let events = [];
+const PROVENANCES = ['official', 'charity', 'cultural', 'industry', 'commercial'];
+let activeProv = new Set(PROVENANCES);
 let clients = [];
 let settings = {};
 
@@ -78,18 +80,24 @@ function sortKeyForEvent(e) {
 }
 
 function renderEvents() {
-  const sorted = events.map((e, i) => ({ ...e, _i: i })).sort((a, b) => sortKeyForEvent(a).localeCompare(sortKeyForEvent(b)));
+  const q = ($('#event-search') ? $('#event-search').value : '').trim().toLowerCase();
+  let sorted = events.map((e, i) => ({ ...e, _i: i })).sort((a, b) => sortKeyForEvent(a).localeCompare(sortKeyForEvent(b)));
+  sorted = sorted.filter(e => activeProv.has(e.provenance || 'official'));
+  if (q) sorted = sorted.filter(e => (e.event + ' ' + e.description + ' ' + e.relevantFor + ' ' + e.category).toLowerCase().includes(q));
+  renderProvChips();
+  const countNote = q ? `<p class="empty-note">${sorted.length} of ${events.length} events match "${escapeHtml(q)}"</p>` : '';
   const rows = sorted.map(e => `
     <tr>
       <td><strong>${escapeHtml(e.date)}</strong>${(e.duration || 1) > 1 ? '<div class="muted">' + e.duration + ' days</div>' : ''}</td>
       <td>${escapeHtml(e.event)}<div class="muted hide-mobile">${escapeHtml(e.description)}</div></td>
       <td class="hide-mobile muted">${escapeHtml(e.category)}</td>
       <td class="row-actions">
+        <button class="ideate-link" data-ideate-event="${e._i}">Ideate</button>
         <button data-edit-event="${e._i}">Edit</button>
         <button class="del" data-del-event="${e._i}">Delete</button>
       </td>
     </tr>`).join('');
-  $('#events-table').innerHTML = `
+  $('#events-table').innerHTML = countNote + `
     <table class="data-table">
       <thead><tr><th>Date</th><th>Event</th><th class="hide-mobile">Category</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
@@ -104,6 +112,7 @@ function eventFormHTML(e = {}, index = -1) {
       <div><label class="form-label">Category</label><input type="text" id="ef-category" value="${escapeHtml(e.category || '')}" placeholder="Awareness / Cultural / Sport / Seasonal/Retail / Political/Economic"></div>
       <div><label class="form-label">Typically suits (sectors)</label><input type="text" id="ef-relevant" value="${escapeHtml(e.relevantFor || '')}"></div>
       <div><label class="form-label">Duration in days (1 for a single day, 7 for a week, 30 for a month)</label><input type="text" id="ef-duration" value="${escapeHtml(String(e.duration || 1))}"></div>
+      <div><label class="form-label">Provenance</label><select id="ef-provenance">${PROVENANCES.map(p => `<option value="${p}" ${(e.provenance || 'official') === p ? 'selected' : ''}>${p[0].toUpperCase() + p.slice(1)}</option>`).join('')}</select></div>
       <div class="full"><label class="form-label">Description</label><textarea id="ef-description" rows="2">${escapeHtml(e.description || '')}</textarea></div>
       <div class="full"><label class="form-label">Hook ideas / notes</label><textarea id="ef-notes" rows="2">${escapeHtml(e.notes || '')}</textarea></div>
     </div>
@@ -112,6 +121,26 @@ function eventFormHTML(e = {}, index = -1) {
       <button class="secondary-btn" data-cancel-form="event">Cancel</button>
     </div>`;
 }
+
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'event-search') renderEvents();
+});
+
+function renderProvChips() {
+  const counts = {};
+  for (const e of events) counts[e.provenance || 'official'] = (counts[e.provenance || 'official'] || 0) + 1;
+  $('#prov-filters').innerHTML = PROVENANCES.map(p => `
+    <button class="prov-chip ${activeProv.has(p) ? 'on' : ''}" data-prov="${p}">${p[0].toUpperCase() + p.slice(1)} <span>${counts[p] || 0}</span></button>`).join('');
+}
+
+document.addEventListener('click', (e) => {
+  const chip = e.target.closest('.prov-chip');
+  if (!chip) return;
+  const p = chip.dataset.prov;
+  if (activeProv.has(p)) activeProv.delete(p); else activeProv.add(p);
+  if (!activeProv.size) activeProv = new Set(PROVENANCES);
+  renderEvents();
+});
 
 // ============ Clients ============
 function renderClients() {
@@ -173,7 +202,8 @@ document.addEventListener('click', async (e) => {
       description: $('#ef-description').value.trim(),
       relevantFor: $('#ef-relevant').value.trim(),
       notes: $('#ef-notes').value.trim(),
-      duration: Math.max(1, parseInt($('#ef-duration').value, 10) || 1)
+      duration: Math.max(1, parseInt($('#ef-duration').value, 10) || 1),
+      provenance: $('#ef-provenance').value
     };
     if (!ev.date || !ev.event) { alert('Date and event name are needed.'); return; }
     if (!/^(\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/.test(ev.date)) { alert('Date must be MM-DD or YYYY-MM-DD.'); return; }
@@ -237,6 +267,7 @@ function renderSettings() {
   $('#set-from').value = settings.fromAddress || '';
   $('#set-personal').value = settings.personalEmail || '';
   $('#set-livesearch').checked = settings.liveSearch !== false;
+  $('#set-commercial').checked = settings.includeCommercial !== false;
   $('#cron-url').textContent = location.origin + '/api/run?key=YOUR-SECRET&email=1';
 }
 
@@ -245,6 +276,7 @@ $('#save-settings-btn').addEventListener('click', async () => {
   settings.fromAddress = $('#set-from').value.trim();
   settings.personalEmail = $('#set-personal').value.trim();
   settings.liveSearch = $('#set-livesearch').checked;
+  settings.includeCommercial = $('#set-commercial').checked;
   try {
     await saveStore('settings', settings);
     $('#settings-saved').textContent = 'Saved.';
@@ -405,3 +437,65 @@ document.addEventListener('click', (e) => {
     setTimeout(() => { btn.textContent = was; btn.classList.remove('copied'); }, 1800);
   });
 });
+
+
+// ============ Ideate a single day ============
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-ideate-event]');
+  if (btn) {
+    const ev = events[+btn.dataset.ideateEvent];
+    if (ev) runIdeation(ev);
+    return;
+  }
+  if (e.target.id === 'ideate-close') $('#ideate-panel').classList.add('hidden');
+});
+
+async function runIdeation(ev) {
+  const panel = $('#ideate-panel');
+  panel.classList.remove('hidden');
+  panel.innerHTML = `<div class="ideate-head"><span class="ideate-title">Ideating: ${escapeHtml(ev.event)}</span><button id="ideate-close" class="secondary-btn">Close</button></div><div class="run-status" id="ideate-status"><div>Warming up...</div></div><div id="ideate-results"></div>`;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  const statusEl = $('#ideate-status');
+
+  try {
+    const res = await fetch('/api/ideate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-password': PASSWORD },
+      body: JSON.stringify({ event: ev })
+    });
+    if (!res.ok || !res.body) throw new Error('The ideation engine did not start (' + res.status + ').');
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let msg;
+        try { msg = JSON.parse(line); } catch (err) { continue; }
+        if (msg.type === 'status') statusEl.innerHTML += '<div>' + escapeHtml(msg.message) + '</div>';
+        else if (msg.type === 'error') statusEl.innerHTML += '<div class="err">' + escapeHtml(msg.message) + '</div>';
+        else if (msg.type === 'done') {
+          statusEl.classList.add('hidden');
+          $('#ideate-results').innerHTML = (msg.ideas || []).map(m => `
+            <div class="idea-card">
+              <div class="idea-card-top">
+                <span class="idea-client">${escapeHtml(m.client)}</span>
+                ${m.idea ? `<span class="idea-name" style="color:var(--teal-darker)">${escapeHtml(m.idea)}</span>` : ''}
+                <button class="copy-seed" data-seed="${escapeHtml(seedTextFor(ev.event, m))}">Copy for Idea Jacker</button>
+              </div>
+              <div class="idea-concept">${escapeHtml(m.concept || '')}</div>
+              ${m.headline ? `<div class="idea-headline">\u201C${escapeHtml(m.headline)}\u201D</div>` : ''}
+              <div class="idea-meta"><span style="color:var(--teal-darker)">Media:</span> ${escapeHtml(m.media || '')} &nbsp;·&nbsp; <span style="color:var(--teal-darker)">This week:</span> ${escapeHtml(m.action || '')}</div>
+            </div>`).join('') || '<p class="empty-note">No strong matches for this one.</p>';
+        }
+      }
+    }
+  } catch (err) {
+    statusEl.innerHTML += '<div class="err">' + escapeHtml(err.message) + '</div>';
+  }
+}
