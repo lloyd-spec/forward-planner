@@ -11,3 +11,8 @@
 [[edge_functions]]
   path = "/api/run"
   function = "run-briefing"
+
+# On-demand single-day ideation
+[[edge_functions]]
+  path = "/api/ideate"
+  function = "ideate-day"
