@@ -3,10 +3,17 @@
 // this page reads and writes it through /api/data and runs the engine
 // through /api/run, which streams progress lines as it works.
 
+const FP_VERSION = 'v11';
 const PASSWORD = 'PicPR2026';
 const $ = (sel) => document.querySelector(sel);
 
 // Any script error becomes a visible banner instead of a silent death.
+// Stamp the running script version into the footer so it's always visible.
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('fp-version');
+  if (el) el.textContent = 'Forward Planner ' + FP_VERSION;
+});
+
 window.addEventListener('error', (e) => {
   try {
     const d = document.createElement('div');
@@ -15,6 +22,27 @@ window.addEventListener('error', (e) => {
     document.body.appendChild(d);
   } catch (err) {}
 });
+
+// If the run-options dialogue isn't in the page's HTML, build it here.
+// This makes the feature self-contained: it cannot be lost to a stale index.html.
+(function ensureRunModal() {
+  if (document.getElementById('run-modal')) return;
+  const style = document.createElement('style');
+  style.textContent = '.run-modal-card{max-width:480px}.run-client-list{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;max-height:300px;overflow-y:auto;padding:10px 12px;background:var(--card);border:0.5px solid var(--border);border-radius:10px;margin-bottom:6px}.run-client-row{display:flex;align-items:center;gap:7px;font-size:13px;padding:3px 0;cursor:pointer}.run-client-row input{width:14px;height:14px;accent-color:var(--teal-dark);flex-shrink:0}@media (max-width:560px){.run-client-list{grid-template-columns:1fr}}';
+  document.head.appendChild(style);
+  const d = document.createElement('div');
+  d.id = 'run-modal';
+  d.className = 'ideate-modal hidden';
+  d.innerHTML = `
+    <div class="ideate-modal-card run-modal-card">
+      <div class="ideate-head"><span class="ideate-title">Run the briefing</span><button id="run-modal-close" class="secondary-btn">Close</button></div>
+      <p class="panel-blurb">Everyone is ticked for a full run. Untick down to one or two clients to build a dedicated forward plan. The email choice in the header still applies.</p>
+      <label class="toggle-row" style="margin:14px 0 10px;"><input type="checkbox" id="run-all-clients" checked> All clients</label>
+      <div id="run-client-list" class="run-client-list"></div>
+      <div class="form-buttons"><button id="run-confirm" class="primary-btn">Run now</button></div>
+    </div>`;
+  document.body.appendChild(d);
+})();
 
 // The Run button is wired here, at the top, before anything that could
 // crash during load. Delegated, so it works no matter what happens below.
@@ -27,7 +55,7 @@ document.addEventListener('click', (e) => {
       const active = (window.__clients || clients || []).filter(c => c.active !== false);
       list.innerHTML = active.map(c => `<label class="run-client-row"><input type="checkbox" value="${escapeHtml(c.name)}" checked> ${escapeHtml(c.name)}${c.prospect ? ' <span class="tag">PROSPECT</span>' : ''}</label>`).join('');
       $('#run-all-clients').checked = true;
-      list.classList.add('hidden');
+      list.classList.remove('hidden');
       modal.classList.remove('hidden');
     } catch (err) {
       alert('Run button error: ' + err.message);
@@ -392,11 +420,10 @@ document.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   if (e.target.id === 'run-modal-close' || e.target.id === 'run-modal') $('#run-modal').classList.add('hidden');
   if (e.target.id === 'run-confirm') {
-    let names = null;
-    if (!$('#run-all-clients').checked) {
-      names = [...$('#run-client-list').querySelectorAll('input:checked')].map(i => i.value);
-      if (!names.length) { alert('Pick at least one client, or tick the full run.'); return; }
-    }
+    const boxes = [...document.querySelectorAll('#run-client-list input')];
+    const ticked = boxes.filter(i => i.checked).map(i => i.value);
+    if (!ticked.length) { alert('Tick at least one client.'); return; }
+    const names = ticked.length === boxes.length ? null : ticked;
     $('#run-modal').classList.add('hidden');
     startRun(names);
   }
@@ -404,7 +431,10 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('change', (e) => {
   if (e.target.id === 'run-all-clients') {
-    $('#run-client-list').classList.toggle('hidden', e.target.checked);
+    document.querySelectorAll('#run-client-list input').forEach(i => { i.checked = e.target.checked; });
+  } else if (e.target.closest && e.target.closest('#run-client-list')) {
+    const boxes = [...document.querySelectorAll('#run-client-list input')];
+    $('#run-all-clients').checked = boxes.every(i => i.checked);
   }
 });
 
