@@ -169,16 +169,63 @@ ${evLines}${freshLines}
 YOUR JOB:
 1. AUGMENT THE CALENDAR FROM YOUR OWN KNOWLEDGE. Before choosing, add any awareness days, weeks and months falling in the window that the calendar misses: UN international days, established UK awareness weeks and months, and quirky days that justify social-first creative. VET EVERYTHING FOR UK RELEVANCE: where UK and US dates differ use the UK date (Mothering Sunday is not US Mother's Day), and exclude US-only observances (Thanksgiving, US Labor Day and similar) unless they have genuine UK media traction. Only include dates you are confident of; if unsure of the exact date, skip it. Treat anything you add exactly like a calendar event.
 2. Pick the events with genuine client fit. Quality over coverage: a sharp briefing of 12-16 events beats a phone book. Skip events with no honest match. Ongoing months and weeks are live opportunities, not missed ones; suggest the mid-period moment that still works.
-3. For each chosen event, name 1-3 best-fit clients. Every angle is a CREATIVE SEED, not a positioning statement: 2-3 sentences with a concrete mechanic, image or moment a journalist or social audience would actually see. Name the idea in quotes when a name earns it. Where the fit allows, make at least one match per event a bolder swing. A good seed makes someone want to paste it straight into the Idea Jacker and build it out.
-4. Social-first days earn their place when a client could own them with quick, charming creative; give those matches the format "Social-first" plus the content idea. The briefing should always carry a handful of these.
-5. Respect every AVOID line absolutely. Prospects get bolder thinking.
-6. Events you considered but skipped go in "alsoNoted" as bare names so the team can see the full calendar at a glance.
-7. DATE FIDELITY: copy each item's date field exactly as provided in the calendar line. Never invent, adjust or "correct" a weekday or date.
-8. Respect the bucket tags: an event tagged ACT belongs in the act section, PLAN in plan, RADAR or ONGOING in radar. Do not promote or demote events between sections.
-9. Write a 2-3 sentence intro: what matters most this week and why.
+3. For each chosen event, name 1-3 best-fit clients. Every match is a WORKED-UP IDEA in the Pic PR house anatomy, not a positioning line:
+   - "idea": a short concept name, in quotes when it earns a name (most should)
+   - "concept": 2-4 sentences. The concrete mechanic someone can picture (what happens, who is in the frame, what the photo or film shows), and a clause on why it works for this client at this moment
+   - "headline": an example PR headline in house style, the line a journalist might actually run. No em dashes, no colons-for-drama unless natural
+   - "media": named target desks and outlets, concrete (e.g. "regional broadcast, BBC Radio Stoke, Care Home Professional, lifestyle pages of the i")
+   - "action": the specific thing to do THIS WEEK given the lead time
+4. VARIETY IS MANDATORY. Across the whole briefing mix photo-led stunts, partnerships, community events, data and survey stories, resident or staff-led human stories and social-first series. Plain expert comment may carry AT MOST a quarter of all matches, and never two matches in a row. If you catch yourself writing "offer expert comment", find the idea instead.
+5. Social-first days earn their place when a client could own them with quick, charming creative. For those, "concept" describes the actual content (what the post or reel literally shows) and "media" can simply read "Social-first". The briefing should always carry a handful.
+6. Where the fit allows, make at least one match per event a bolder swing; prospects always get one. A good idea makes someone want to paste it straight into the Idea Jacker and build it out.
+7. Respect every AVOID line absolutely.
+8. Events you considered but skipped go in "alsoNoted" as bare names so the team can see the full calendar at a glance.
+9. DATE FIDELITY: copy each item's date field exactly as provided in the calendar line. Never invent, adjust or "correct" a weekday or date.
+10. Respect the bucket tags: an event tagged ACT belongs in the act section, PLAN in plan, RADAR or ONGOING in radar. Do not promote or demote events between sections.
+11. Write a 2-3 sentence intro: what matters most this week and why.
 
 Return ONLY valid JSON, no other text, exactly this shape:
-{"intro": "...", "sections": [{"key": "act", "title": "Act this week", "items": [{"event": "...", "date": "Mon 20 July", "daysOut": 40, "why": "one line on the moment itself", "matches": [{"client": "...", "angle": "...", "format": "...", "leadNote": "what to do this week"}]}]}, {"key": "plan", "title": "Start planning", "items": []}, {"key": "radar", "title": "On the radar", "items": []}], "alsoNoted": ["...", "..."]}`;
+{"intro": "...", "sections": [{"key": "act", "title": "Act this week", "items": [{"event": "...", "date": "Mon 20 July", "daysOut": 40, "why": "one line on the moment itself", "matches": [{"client": "...", "idea": "\"Concept Name\"", "concept": "the mechanic and why it works, 2-4 sentences", "headline": "Example PR headline in house style", "media": "named target desks and outlets", "action": "what to do this week"}]}]}, {"key": "plan", "title": "Start planning", "items": []}, {"key": "radar", "title": "On the radar", "items": []}], "alsoNoted": ["...", "..."]}`;
+}
+
+// Parse the composer's JSON, repairing truncation if the output was clipped:
+// trim back to the last complete element, drop any dangling fragment and
+// close whatever brackets remain open.
+function parseComposedJSON(raw) {
+  const s0 = raw.indexOf("{");
+  if (s0 === -1) throw new Error("no JSON found");
+  const text = raw.slice(s0);
+  const last = text.lastIndexOf("}");
+  if (last !== -1) {
+    try { return JSON.parse(text.slice(0, last + 1)); } catch (e) {}
+  }
+  const closersFor = (snippet) => {
+    let stack = [], inStr = false, esc = false;
+    for (const ch of snippet) {
+      if (esc) { esc = false; continue; }
+      if (ch === "\\") { if (inStr) esc = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === "{") stack.push("}");
+      else if (ch === "[") stack.push("]");
+      else if (ch === "}" || ch === "]") stack.pop();
+    }
+    return (inStr ? '"' : "") + stack.reverse().join("");
+  };
+  const cuts = [text.length];
+  for (let i = text.length - 1; i >= 0 && cuts.length < 80; i--) {
+    if (text[i] === "}" || text[i] === "]") cuts.push(i + 1);
+  }
+  for (const cut of cuts) {
+    let snippet = text.slice(0, cut).replace(/,\s*$/, "");
+    try { return JSON.parse(snippet + closersFor(snippet)); } catch (e) {}
+    const lastComma = snippet.lastIndexOf(",");
+    if (lastComma > 0) {
+      const snip2 = snippet.slice(0, lastComma);
+      try { return JSON.parse(snip2 + closersFor(snip2)); } catch (e) {}
+    }
+  }
+  throw new Error("could not repair");
 }
 
 // Belt and braces: no em dash from any source survives into the output.
@@ -200,20 +247,26 @@ function esc(s) {
 }
 
 function renderEmailHTML(briefing, siteUrl) {
-  const navy = "#0a2540", teal = "#2a657d", muted = "#5a6478", cream = "#faf6ee";
-  const sectionBlocks = briefing.sections.filter(s => s.items && s.items.length).map(s => `
-    <h2 style="font-size:13px;letter-spacing:0.1em;text-transform:uppercase;color:${teal};margin:28px 0 4px;">${esc(s.title)}</h2>
+  const navy = "#0a2540", teal = "#2a657d", muted = "#5a6478", cream = "#faf6ee", amber = "#b06a00";
+  const accents = { act: navy, plan: teal, radar: amber };
+  const sectionBlocks = briefing.sections.filter(s => s.items && s.items.length).map(s => {
+    const accent = accents[s.key] || teal;
+    return `
+    <h2 style="font-size:13px;letter-spacing:0.1em;text-transform:uppercase;color:${accent};margin:30px 0 4px;">&#9679;&nbsp; ${esc(s.title)}</h2>
     ${s.items.map(it => `
-      <div style="border-left:3px solid ${teal};padding:10px 14px;margin:10px 0;background:#ffffff;border-radius:0 8px 8px 0;">
-        <div style="font-size:15px;font-weight:700;color:${navy};">${esc(it.event)} <span style="font-weight:500;color:${muted};">· ${esc(it.date)} (${it.daysOut} days)</span></div>
-        <div style="font-size:13px;color:${muted};margin-top:2px;">${esc(it.why)}</div>
+      <div style="border-left:3px solid ${accent};padding:12px 16px;margin:12px 0;background:#ffffff;border-radius:0 10px 10px 0;">
+        <div style="font-size:16px;font-weight:700;color:${navy};font-family:Georgia,serif;">${esc(it.event)}</div>
+        <div style="font-size:12px;color:${muted};margin-top:1px;">${esc(it.date)}${it.daysOut ? " · " + it.daysOut + " days out" : ""} · ${esc(it.why)}</div>
         ${(it.matches || []).map(m => `
-          <div style="margin-top:8px;font-size:13.5px;color:${navy};line-height:1.5;">
-            <strong>${esc(m.client)}:</strong> ${esc(m.angle)}<br>
-            <span style="color:${teal};">Format:</span> ${esc(m.format)} · <span style="color:${teal};">This week:</span> ${esc(m.leadNote)}
+          <div style="margin-top:12px;padding-top:10px;border-top:1px solid #efe9dc;">
+            <div style="font-size:13.5px;color:${navy};"><strong>${esc(m.client)}</strong>${m.idea ? ' · <strong style="color:' + accent + ';">' + esc(m.idea) + "</strong>" : ""}</div>
+            <div style="font-size:13.5px;color:${navy};line-height:1.55;margin-top:3px;">${esc(m.concept || m.angle || "")}</div>
+            ${m.headline ? `<div style="font-size:13.5px;font-style:italic;color:${teal};font-family:Georgia,serif;margin-top:6px;">&ldquo;${esc(m.headline)}&rdquo;</div>` : ""}
+            <div style="font-size:12px;color:${muted};margin-top:6px;"><strong style="color:${accent};">Media:</strong> ${esc(m.media || m.format || "")} &nbsp;·&nbsp; <strong style="color:${accent};">This week:</strong> ${esc(m.action || m.leadNote || "")}</div>
           </div>`).join("")}
       </div>`).join("")}
-  `).join("");
+  `;
+  }).join("");
 
   const also = (briefing.alsoNoted || []).length
     ? `<p style="font-size:12px;color:${muted};margin-top:24px;"><strong>Also on the calendar:</strong> ${briefing.alsoNoted.map(esc).join(" · ")}</p>`
@@ -225,10 +278,10 @@ function renderEmailHTML(briefing, siteUrl) {
 
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:${cream};">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:28px 14px;">
-  <table role="presentation" width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
+  <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;">
     <tr><td style="font-family:Georgia,serif;">
       <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${teal};font-family:Arial,sans-serif;font-weight:700;">Pic PR · Forward Planner</div>
-      <h1 style="font-size:26px;color:${navy};margin:8px 0 14px;">${esc(briefing.subject)}</h1>
+      <h1 style="font-size:27px;color:${navy};margin:8px 0 14px;">${esc(briefing.subject)}</h1>
       <div style="font-family:Arial,sans-serif;">
         ${thin}
         <p style="font-size:14px;color:${navy};line-height:1.55;">${esc(briefing.intro)}</p>
@@ -237,7 +290,7 @@ function renderEmailHTML(briefing, siteUrl) {
         <hr style="border:none;border-top:1px solid #e3ddd0;margin:28px 0 14px;">
         <p style="font-size:12px;color:${muted};line-height:1.6;">
           Spotted a moment we're missing? <a href="${siteUrl}" style="color:${teal};">Add it to the calendar</a>.
-          Like an angle? Paste it into the <a href="https://ideajacker.netlify.app" style="color:${teal};">Idea Jacker</a> ("Develop your own idea") and work it up into a full brief.
+          Like an idea? Paste it into the <a href="https://ideajacker.netlify.app" style="color:${teal};">Idea Jacker</a> ("Develop your own idea") and build it out.
         </p>
       </div>
     </td></tr>
@@ -318,11 +371,13 @@ export default async function handler(request) {
         let lastBeat = Date.now();
         const apiStream = await client.messages.create({
           model: COMPOSE_MODEL,
-          max_tokens: 6000,
+          max_tokens: 16000,
           stream: true,
           messages: [{ role: "user", content: buildComposePrompt(windowEvents, fresh, clients) }]
         });
+        let stopReason = "";
         for await (const ev of apiStream) {
+          if (ev.type === "message_delta" && ev.delta && ev.delta.stop_reason) stopReason = ev.delta.stop_reason;
           if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "text_delta") {
             text += ev.delta.text;
             if (Date.now() - lastBeat > 4000) {
@@ -331,9 +386,15 @@ export default async function handler(request) {
             }
           }
         }
-        const s = text.indexOf("{"), e = text.lastIndexOf("}");
-        if (s === -1 || e === -1) throw new Error("The composer returned something unexpected.");
-        let composed = JSON.parse(text.slice(s, e + 1));
+        let composed;
+        try {
+          composed = parseComposedJSON(text);
+        } catch (err) {
+          throw new Error("The composer's output could not be read" + (stopReason === "max_tokens" ? " even after repair (it ran far past the length limit). Run it again." : ". Run it again."));
+        }
+        if (stopReason === "max_tokens") {
+          send({ type: "status", message: "The briefing ran long and was tidied at the edge. Everything shown is intact." });
+        }
         composed = stripEmDashes(composed);
 
         const now = new Date();

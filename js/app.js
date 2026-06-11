@@ -335,27 +335,73 @@ $('#run-btn').addEventListener('click', async () => {
 });
 
 // ============ Briefing render ============
+const BUCKET_ACCENT = { act: 'var(--navy)', plan: 'var(--teal-darker)', radar: 'var(--amber)' };
+
+function seedTextFor(eventName, m) {
+  const bits = [];
+  if (m.idea) bits.push(m.idea.replace(/^"|"$/g, ''));
+  bits.push((m.concept || m.angle || '').trim());
+  if (m.headline) bits.push('Example headline: ' + m.headline);
+  if (m.media || m.format) bits.push('Target media: ' + (m.media || m.format));
+  return 'Pegged to ' + eventName + '. ' + bits.join(' ');
+}
+
 function renderBriefing(b) {
-  const sections = (b.sections || []).filter(s => s.items && s.items.length).map(s => `
-    <div class="brief-section-title">${escapeHtml(s.title)}</div>
-    ${s.items.map(it => `
-      <div class="brief-item">
-        <div class="brief-item-head">${escapeHtml(it.event)} <span class="brief-item-date">· ${escapeHtml(it.date)} (${escapeHtml(String(it.daysOut))} days)</span></div>
-        <div class="brief-item-why">${escapeHtml(it.why)}</div>
-        ${(it.matches || []).map(m => `
-          <div class="brief-match"><strong>${escapeHtml(m.client)}:</strong> ${escapeHtml(m.angle)}<br>
-          <span class="brief-match-meta">Format:</span> ${escapeHtml(m.format)} · <span class="brief-match-meta">This week:</span> ${escapeHtml(m.leadNote)}</div>`).join('')}
-      </div>`).join('')}
-  `).join('');
+  const totalIdeas = (b.sections || []).reduce((n, s) => n + (s.items || []).reduce((m, it) => m + (it.matches || []).length, 0), 0);
+  const chips = [
+    (b.sections || []).reduce((n, s) => n + (s.items || []).length, 0) + ' moments',
+    totalIdeas + ' ideas',
+    b.freshCount ? b.freshCount + ' fresh finds' : '',
+    b.emailed ? 'Emailed to the team' : ''
+  ].filter(Boolean);
+
+  const sections = (b.sections || []).filter(s => s.items && s.items.length).map(s => {
+    const accent = BUCKET_ACCENT[s.key] || 'var(--teal-darker)';
+    return `
+    <div class="brief-section">
+      <div class="brief-section-title" style="color:${accent}"><span class="section-dot" style="background:${accent}"></span>${escapeHtml(s.title)}<span class="section-count">${s.items.length}</span></div>
+      ${s.items.map(it => `
+        <div class="brief-item" style="border-left-color:${accent}">
+          <div class="brief-item-head">${escapeHtml(it.event)}</div>
+          <div class="brief-item-date">${escapeHtml(it.date)}${it.daysOut ? ' · ' + escapeHtml(String(it.daysOut)) + ' days out' : ''} · ${escapeHtml(it.why)}</div>
+          ${(it.matches || []).map(m => `
+            <div class="idea-card">
+              <div class="idea-card-top">
+                <span class="idea-client">${escapeHtml(m.client)}</span>
+                ${m.idea ? `<span class="idea-name" style="color:${accent}">${escapeHtml(m.idea)}</span>` : ''}
+                <button class="copy-seed" data-seed="${escapeHtml(seedTextFor(it.event, m))}">Copy for Idea Jacker</button>
+              </div>
+              <div class="idea-concept">${escapeHtml(m.concept || m.angle || '')}</div>
+              ${m.headline ? `<div class="idea-headline">“${escapeHtml(m.headline)}”</div>` : ''}
+              <div class="idea-meta"><span style="color:${accent}">Media:</span> ${escapeHtml(m.media || m.format || '')} &nbsp;·&nbsp; <span style="color:${accent}">This week:</span> ${escapeHtml(m.action || m.leadNote || '')}</div>
+            </div>`).join('')}
+        </div>`).join('')}
+    </div>`;
+  }).join('');
 
   const also = (b.alsoNoted || []).length
     ? `<div class="brief-also"><strong>Also on the calendar:</strong> ${b.alsoNoted.map(escapeHtml).join(' · ')}</div>` : '';
 
   $('#briefing-view').innerHTML = `
-    <div class="brief-subject">${escapeHtml(b.subject)}</div>
-    <div class="brief-meta">${escapeHtml(b.id)}${b.emailed ? ' · emailed to the team' : ''}${b.freshCount ? ' · includes ' + b.freshCount + ' freshly searched events' : ''}</div>
-    ${b.thinWarning ? '<div class="brief-thin">' + escapeHtml(b.thinWarning) + '</div>' : ''}
-    <p class="brief-intro">${escapeHtml(b.intro)}</p>
+    <div class="brief-hero">
+      <div class="brief-eyebrow">Forward Planner briefing</div>
+      <div class="brief-subject">${escapeHtml(b.subject)}</div>
+      <div class="brief-chips">${chips.map(c => '<span class="brief-chip">' + escapeHtml(c) + '</span>').join('')}</div>
+      ${b.thinWarning ? '<div class="brief-thin">' + escapeHtml(b.thinWarning) + '</div>' : ''}
+      <p class="brief-intro">${escapeHtml(b.intro)}</p>
+    </div>
     ${sections}
     ${also}`;
 }
+
+// Copy-for-Idea-Jacker buttons
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.copy-seed');
+  if (!btn) return;
+  navigator.clipboard.writeText(btn.dataset.seed).then(() => {
+    const was = btn.textContent;
+    btn.textContent = 'Copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = was; btn.classList.remove('copied'); }, 1800);
+  });
+});
