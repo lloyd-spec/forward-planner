@@ -81,7 +81,7 @@ function renderEvents() {
   const sorted = events.map((e, i) => ({ ...e, _i: i })).sort((a, b) => sortKeyForEvent(a).localeCompare(sortKeyForEvent(b)));
   const rows = sorted.map(e => `
     <tr>
-      <td><strong>${escapeHtml(e.date)}</strong></td>
+      <td><strong>${escapeHtml(e.date)}</strong>${(e.duration || 1) > 1 ? '<div class="muted">' + e.duration + ' days</div>' : ''}</td>
       <td>${escapeHtml(e.event)}<div class="muted hide-mobile">${escapeHtml(e.description)}</div></td>
       <td class="hide-mobile muted">${escapeHtml(e.category)}</td>
       <td class="row-actions">
@@ -99,10 +99,11 @@ function renderEvents() {
 function eventFormHTML(e = {}, index = -1) {
   return `
     <div class="grid">
-      <div><label class="form-label">Date (MM-DD recurring, or YYYY-MM-DD one-off)</label><input type="text" id="ef-date" value="${escapeHtml(e.date || '')}"></div>
+      <div><label class="form-label">Date: MM-DD recurring, YYYY-MM-DD one-off, or floating like 3:sun:06 (third Sunday of June) / last:fri:09</label><input type="text" id="ef-date" value="${escapeHtml(e.date || '')}"></div>
       <div><label class="form-label">Event name</label><input type="text" id="ef-event" value="${escapeHtml(e.event || '')}"></div>
       <div><label class="form-label">Category</label><input type="text" id="ef-category" value="${escapeHtml(e.category || '')}" placeholder="Awareness / Cultural / Sport / Seasonal/Retail / Political/Economic"></div>
       <div><label class="form-label">Typically suits (sectors)</label><input type="text" id="ef-relevant" value="${escapeHtml(e.relevantFor || '')}"></div>
+      <div><label class="form-label">Duration in days (1 for a single day, 7 for a week, 30 for a month)</label><input type="text" id="ef-duration" value="${escapeHtml(String(e.duration || 1))}"></div>
       <div class="full"><label class="form-label">Description</label><textarea id="ef-description" rows="2">${escapeHtml(e.description || '')}</textarea></div>
       <div class="full"><label class="form-label">Hook ideas / notes</label><textarea id="ef-notes" rows="2">${escapeHtml(e.notes || '')}</textarea></div>
     </div>
@@ -171,7 +172,8 @@ document.addEventListener('click', async (e) => {
       category: $('#ef-category').value.trim(),
       description: $('#ef-description').value.trim(),
       relevantFor: $('#ef-relevant').value.trim(),
-      notes: $('#ef-notes').value.trim()
+      notes: $('#ef-notes').value.trim(),
+      duration: Math.max(1, parseInt($('#ef-duration').value, 10) || 1)
     };
     if (!ev.date || !ev.event) { alert('Date and event name are needed.'); return; }
     if (!/^(\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/.test(ev.date)) { alert('Date must be MM-DD or YYYY-MM-DD.'); return; }
@@ -339,7 +341,7 @@ function renderBriefing(b) {
         <div class="brief-item-head">${escapeHtml(it.event)} <span class="brief-item-date">· ${escapeHtml(it.date)} (${escapeHtml(String(it.daysOut))} days)</span></div>
         <div class="brief-item-why">${escapeHtml(it.why)}</div>
         ${(it.matches || []).map(m => `
-          <div class="brief-match"><strong>${escapeHtml(m.client)}</strong> — ${escapeHtml(m.angle)}<br>
+          <div class="brief-match"><strong>${escapeHtml(m.client)}:</strong> ${escapeHtml(m.angle)}<br>
           <span class="brief-match-meta">Format:</span> ${escapeHtml(m.format)} · <span class="brief-match-meta">This week:</span> ${escapeHtml(m.leadNote)}</div>`).join('')}
       </div>`).join('')}
   `).join('');

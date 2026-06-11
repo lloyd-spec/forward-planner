@@ -1,5 +1,5 @@
 // Seed data for the Forward Planner - loaded on first run, then managed in the tool.
-// Generated from PR_Briefing_Master.xlsx on 10 June 2026.
+// v3: floating-date rules (e.g. 3:sun:06 = third Sunday of June) for UK days that move.
 
 export const SEED_EVENTS = [
   {
@@ -19,7 +19,7 @@ export const SEED_EVENTS = [
     "notes": "Accessibility commitments, blind/visually impaired employees"
   },
   {
-    "date": "01-13",
+    "date": "3:mon:01",
     "event": "Blue Monday (3rd Monday)",
     "category": "Cultural",
     "description": "Supposedly the most depressing day of the year. Mostly marketing, but huge media interest.",
@@ -48,7 +48,8 @@ export const SEED_EVENTS = [
     "category": "Awareness",
     "description": "UK month-long observance.",
     "relevantFor": "Charity, HR, brands with diversity work, education",
-    "notes": "Authentic D&I stories, not rainbow-washing"
+    "notes": "Authentic D&I stories, not rainbow-washing",
+    "duration": 28
   },
   {
     "date": "02-04",
@@ -59,7 +60,7 @@ export const SEED_EVENTS = [
     "notes": "Workplace screening programmes, survivor stories"
   },
   {
-    "date": "02-06",
+    "date": "1:thu:02",
     "event": "Time to Talk Day (1st Thurs Feb)",
     "category": "Awareness",
     "description": "Mind/Rethink mental health conversation day.",
@@ -80,7 +81,8 @@ export const SEED_EVENTS = [
     "category": "Sport",
     "description": "Annual Six Nations tournament runs Feb-Mar.",
     "relevantFor": "Sports, hospitality, food & drink, pubs/venues",
-    "notes": "Match-day menus, venue bookings, expert commentary"
+    "notes": "Match-day menus, venue bookings, expert commentary",
+    "duration": 49
   },
   {
     "date": "03-01",
@@ -99,7 +101,7 @@ export const SEED_EVENTS = [
     "notes": "Biodiversity initiatives, rewilding stories"
   },
   {
-    "date": "03-06",
+    "date": "1:thu:03",
     "event": "World Book Day (1st Thurs March)",
     "category": "Awareness",
     "description": "Major UK media moment with schools.",
@@ -152,10 +154,10 @@ export const SEED_EVENTS = [
     "category": "Seasonal/Retail",
     "description": "Major UK gifting and hospitality moment.",
     "relevantFor": "Hospitality, retail, jewellery, beauty, florists, gifting",
-    "notes": "Brunch menus, gift guides, mother-daughter stories"
+    "notes": "Floating: Mothering Sunday moves with Easter, confirm the exact date each year. UK Mothering Sunday. US Mother's Day falls in May; never conflate the two. Brunch menus, gift guides, mother-daughter stories"
   },
   {
-    "date": "03-29",
+    "date": "last:sun:03",
     "event": "British Summer Time begins (last Sun March)",
     "category": "Seasonal",
     "description": "Clocks go forward.",
@@ -195,7 +197,7 @@ export const SEED_EVENTS = [
     "notes": "English produce, literary tie-ins"
   },
   {
-    "date": "04-27",
+    "date": "last:sun:04",
     "event": "London Marathon (last Sun April)",
     "category": "Sport",
     "description": "Major UK sporting and charity event.",
@@ -211,7 +213,7 @@ export const SEED_EVENTS = [
     "notes": "Playful tie-ins, themed menus/products"
   },
   {
-    "date": "05-05",
+    "date": "1:mon:05",
     "event": "Early May Bank Holiday (1st Mon)",
     "category": "Seasonal",
     "description": "UK bank holiday weekend.",
@@ -224,7 +226,8 @@ export const SEED_EVENTS = [
     "category": "Awareness",
     "description": "Mind / Mental Health Foundation week.",
     "relevantFor": "Mental health, HR, hospitality, healthcare",
-    "notes": "Workplace initiatives, expert columns"
+    "notes": "Workplace initiatives, expert columns",
+    "duration": 7
   },
   {
     "date": "05-15",
@@ -235,7 +238,7 @@ export const SEED_EVENTS = [
     "notes": "Watch-party menus, predictions, fashion"
   },
   {
-    "date": "05-25",
+    "date": "last:mon:05",
     "event": "Spring Bank Holiday (last Mon)",
     "category": "Seasonal",
     "description": "UK bank holiday.",
@@ -248,7 +251,8 @@ export const SEED_EVENTS = [
     "category": "Cultural",
     "description": "Major RHS garden event.",
     "relevantFor": "Garden, lifestyle, hospitality (estates), interiors",
-    "notes": "Garden trends, expert commentary"
+    "notes": "Garden trends, expert commentary",
+    "duration": 5
   },
   {
     "date": "06-01",
@@ -256,7 +260,8 @@ export const SEED_EVENTS = [
     "category": "Awareness",
     "description": "Global LGBT+ celebration month.",
     "relevantFor": "Brands with genuine D&I work, hospitality, retail",
-    "notes": "Substance over rainbow logos — media is critical"
+    "notes": "Substance over rainbow logos — media is critical",
+    "duration": 30
   },
   {
     "date": "06-05",
@@ -275,7 +280,7 @@ export const SEED_EVENTS = [
     "notes": "Plastic reduction, ocean conservation"
   },
   {
-    "date": "06-14",
+    "date": "2:sat:06",
     "event": "Trooping the Colour / King's Birthday Parade",
     "category": "Cultural",
     "description": "UK royal event.",
@@ -283,7 +288,7 @@ export const SEED_EVENTS = [
     "notes": "Royal-themed content, celebratory menus"
   },
   {
-    "date": "06-15",
+    "date": "3:sun:06",
     "event": "Father's Day (3rd Sunday)",
     "category": "Seasonal/Retail",
     "description": "Gifting and hospitality moment.",
@@ -304,7 +309,8 @@ export const SEED_EVENTS = [
     "category": "Sport",
     "description": "Major UK sporting moment, fashion+food crossover.",
     "relevantFor": "Sport, hospitality, food & drink (strawberries!), fashion, retail",
-    "notes": "Strawberries & cream features, fashion, expert picks"
+    "notes": "Strawberries & cream features, fashion, expert picks",
+    "duration": 14
   },
   {
     "date": "06-27",
@@ -312,10 +318,11 @@ export const SEED_EVENTS = [
     "category": "Cultural",
     "description": "Major UK festival, ~5 days media saturation.",
     "relevantFor": "Music, fashion, hospitality, food & drink, retail",
-    "notes": "Festival fashion, food trends, alternative content"
+    "notes": "Festival fashion, food trends, alternative content",
+    "duration": 5
   },
   {
-    "date": "06-29",
+    "date": "last:sat:06",
     "event": "Armed Forces Day (last Sat June)",
     "category": "Awareness",
     "description": "UK day honouring military.",
@@ -384,7 +391,8 @@ export const SEED_EVENTS = [
     "category": "Cultural",
     "description": "World's largest arts festival.",
     "relevantFor": "Arts, hospitality, Scottish brands, tourism",
-    "notes": "Festival picks, hospitality offers"
+    "notes": "Festival picks, hospitality offers",
+    "duration": 25
   },
   {
     "date": "08-12",
@@ -403,7 +411,7 @@ export const SEED_EVENTS = [
     "notes": "Photography contests, location features"
   },
   {
-    "date": "08-25",
+    "date": "last:mon:08",
     "event": "August Bank Holiday (last Mon)",
     "category": "Seasonal",
     "description": "Final summer bank holiday.",
@@ -411,12 +419,13 @@ export const SEED_EVENTS = [
     "notes": "End of summer content, BBQ, festivals"
   },
   {
-    "date": "08-25",
+    "date": "last:sun:08",
     "event": "Notting Hill Carnival (Aug BH weekend)",
     "category": "Cultural",
     "description": "Major UK street festival, Caribbean culture.",
     "relevantFor": "Hospitality, food & drink, music, retail, fashion",
-    "notes": "Caribbean food, carnival culture, London hospitality"
+    "notes": "Caribbean food, carnival culture, London hospitality",
+    "duration": 2
   },
   {
     "date": "09-01",
@@ -448,7 +457,8 @@ export const SEED_EVENTS = [
     "category": "Cultural",
     "description": "Major fashion industry moment.",
     "relevantFor": "Fashion, retail, beauty, hospitality, luxury",
-    "notes": "Trend coverage, designer features"
+    "notes": "Trend coverage, designer features",
+    "duration": 5
   },
   {
     "date": "09-21",
@@ -467,7 +477,7 @@ export const SEED_EVENTS = [
     "notes": "Autumn menus, seasonal shift content"
   },
   {
-    "date": "09-26",
+    "date": "last:fri:09",
     "event": "Macmillan Coffee Morning (last Friday)",
     "category": "Awareness",
     "description": "Major UK charity event.",
@@ -480,7 +490,8 @@ export const SEED_EVENTS = [
     "category": "Awareness",
     "description": "UK month-long observance.",
     "relevantFor": "Employers with genuine D&I, education, charity, arts",
-    "notes": "Authentic stories, not tokenism — media is critical"
+    "notes": "Authentic stories, not tokenism — media is critical",
+    "duration": 31
   },
   {
     "date": "10-01",
@@ -515,7 +526,7 @@ export const SEED_EVENTS = [
     "notes": "Food waste, sustainable sourcing, hunger charities"
   },
   {
-    "date": "10-25",
+    "date": "last:sun:10",
     "event": "British Summer Time ends (last Sun Oct)",
     "category": "Seasonal",
     "description": "Clocks go back.",
@@ -579,7 +590,7 @@ export const SEED_EVENTS = [
     "notes": "Sector reactions, expert commentary, business impact"
   },
   {
-    "date": "11-28",
+    "date": "4:fri:11",
     "event": "Black Friday (4th Friday)",
     "category": "Seasonal/Retail",
     "description": "Major retail discount day.",
@@ -587,12 +598,12 @@ export const SEED_EVENTS = [
     "notes": "Anti-Black Friday angles often outperform deals"
   },
   {
-    "date": "11-30",
-    "event": "Small Business Saturday (last Sat Nov)",
+    "date": "1:sat:12",
+    "event": "Small Business Saturday (1st Sat December, UK)",
     "category": "Awareness",
     "description": "Independent business support day.",
     "relevantFor": "Retail, hospitality, B2B, charity",
-    "notes": "Indie business stories, support local content"
+    "notes": "UK date is the first Saturday of December, a week after the US edition. Indie business stories, support local content"
   },
   {
     "date": "11-30",
@@ -664,7 +675,8 @@ export const SEED_EVENTS = [
     "category": "Sport",
     "description": "Month-long global football tournament, 11 June to 19 July. Massive UK media saturation, late-night kick-offs UK time.",
     "relevantFor": "Hospitality, food & drink, pubs/venues, retail, care (resident watch parties)",
-    "notes": "Watch-party menus, late kick-off angles, nostalgia content, multi-generational viewing"
+    "notes": "Watch-party menus, late kick-off angles, nostalgia content, multi-generational viewing",
+    "duration": 39
   },
   {
     "date": "2026-07-19",
@@ -680,7 +692,371 @@ export const SEED_EVENTS = [
     "category": "Sport",
     "description": "Glasgow hosts 23 July to 2 August. Scaled-back but high-profile Scottish moment.",
     "relevantFor": "Scottish hospitality, tourism, sport, food & drink",
-    "notes": "Scottish tourism angles, Australian visitor influx, athlete stories"
+    "notes": "Scottish tourism angles, Australian visitor influx, athlete stories",
+    "duration": 11
+  },
+  {
+    "date": "04-01",
+    "event": "April Fools' Day",
+    "category": "Cultural (social-first)",
+    "description": "Brand pranks and spoof launches. High risk, high reward; only with genuine wit.",
+    "relevantFor": "Retail, hospitality, consumer, any playful brand",
+    "notes": "Spoof product launches, deadpan announcements; sharp execution or nothing"
+  },
+  {
+    "date": "02-09",
+    "event": "National Pizza Day",
+    "category": "Seasonal/Retail (social-first)",
+    "description": "US-origin food day with real UK media and social traction.",
+    "relevantFor": "Hospitality, food & drink, kitchenware",
+    "notes": "Menu specials, pizza-at-home content"
+  },
+  {
+    "date": "02-11",
+    "event": "International Day of Women and Girls in Science",
+    "category": "Awareness (UN)",
+    "description": "UN day promoting women and girls in STEM.",
+    "relevantFor": "Tech, education, employers",
+    "notes": "Female-founder and STEM-career stories"
+  },
+  {
+    "date": "02-17",
+    "event": "Random Acts of Kindness Day",
+    "category": "Awareness (social-first)",
+    "description": "Global kindness day with strong social appeal.",
+    "relevantFor": "Care, hospitality, charity, employers",
+    "notes": "Staff and community kindness initiatives, surprise gestures on camera"
+  },
+  {
+    "date": "03-01",
+    "event": "Marie Curie Great Daffodil Appeal",
+    "category": "Awareness (UK month)",
+    "description": "UK fundraising month for end of life care.",
+    "relevantFor": "Care, charity, community",
+    "notes": "Home displays, fundraising tie-ins",
+    "duration": 31
+  },
+  {
+    "date": "03-21",
+    "event": "International Day of Forests",
+    "category": "Awareness (UN)",
+    "description": "UN day on forests and trees.",
+    "relevantFor": "Estates, sustainability, outdoor brands",
+    "notes": "Estate woodland stories, tree planting"
+  },
+  {
+    "date": "03-22",
+    "event": "World Water Day",
+    "category": "Awareness (UN)",
+    "description": "UN day on water and sustainability.",
+    "relevantFor": "Sustainability, hospitality, food & drink",
+    "notes": "Water-saving operations, sustainability commitments"
+  },
+  {
+    "date": "04-21",
+    "event": "World Creativity and Innovation Day",
+    "category": "Awareness (UN)",
+    "description": "UN day celebrating creativity and problem solving.",
+    "relevantFor": "Agencies, tech, brands with innovation stories",
+    "notes": "Behind-the-scenes creative process content"
+  },
+  {
+    "date": "05-01",
+    "event": "National Walking Month",
+    "category": "Awareness (UK month)",
+    "description": "Living Streets' UK month promoting everyday walking.",
+    "relevantFor": "Wellness, care, tourism, employers",
+    "notes": "Walking challenges, resident strolls, lunchtime walk content",
+    "duration": 31
+  },
+  {
+    "date": "05-15",
+    "event": "International Day of Families",
+    "category": "Awareness (UN)",
+    "description": "UN day on family life.",
+    "relevantFor": "Care, family brands, hospitality",
+    "notes": "Intergenerational stories, family traditions"
+  },
+  {
+    "date": "05-18",
+    "event": "International Museum Day",
+    "category": "Awareness",
+    "description": "Global museums day, strong UK participation.",
+    "relevantFor": "Arts, tourism, education, heritage estates",
+    "notes": "Local museum partnerships, heritage stories"
+  },
+  {
+    "date": "05-20",
+    "event": "World Bee Day",
+    "category": "Awareness (UN)",
+    "description": "UN day on pollinators.",
+    "relevantFor": "Sustainability, food, estates and gardens",
+    "notes": "Estate hives, pollinator planting, honey menus"
+  },
+  {
+    "date": "05-21",
+    "event": "International Tea Day",
+    "category": "Awareness (UN, social-first)",
+    "description": "UN day; a gift for UK brands.",
+    "relevantFor": "Hospitality, care, kitchenware, retail",
+    "notes": "Afternoon tea content, resident tea rituals, brew debates"
+  },
+  {
+    "date": "06-01",
+    "event": "Volunteers' Week",
+    "category": "Awareness (UK week)",
+    "description": "UK week celebrating volunteers, 1 to 7 June.",
+    "relevantFor": "Charity, employers, care, community",
+    "notes": "Volunteer profiles, team volunteering days",
+    "duration": 7
+  },
+  {
+    "date": "06-03",
+    "event": "World Bicycle Day",
+    "category": "Awareness (UN)",
+    "description": "UN day promoting cycling.",
+    "relevantFor": "Sustainability, leisure, green transport",
+    "notes": "Cycle-to-work stories, e-bike and active travel angles"
+  },
+  {
+    "date": "06-08",
+    "event": "Carers Week",
+    "category": "Awareness (UK week)",
+    "description": "UK awareness week for unpaid carers. Floating week, confirm exact dates each year.",
+    "relevantFor": "Care, charity, employers, healthcare",
+    "notes": "Carer stories, respite support, employer flexibility",
+    "duration": 7
+  },
+  {
+    "date": "06-14",
+    "event": "World Blood Donor Day",
+    "category": "Awareness (WHO)",
+    "description": "WHO day thanking blood donors.",
+    "relevantFor": "Healthcare, employers, community",
+    "notes": "Staff donation drives, donor stories"
+  },
+  {
+    "date": "06-15",
+    "event": "Loneliness Awareness Week",
+    "category": "Awareness (UK week)",
+    "description": "Marmalade Trust UK week on loneliness. Floating week, confirm exact dates each year.",
+    "relevantFor": "Care, charity, community, hospitality",
+    "notes": "Befriending schemes, community meals, intergenerational meetups",
+    "duration": 7
+  },
+  {
+    "date": "06-20",
+    "event": "World Refugee Day",
+    "category": "Awareness (UN)",
+    "description": "UN day honouring refugees. Handle with substance only.",
+    "relevantFor": "Charity, employers with genuine programmes",
+    "notes": "Employment and welcome schemes; no token gestures"
+  },
+  {
+    "date": "06-21",
+    "event": "International Day of Yoga",
+    "category": "Awareness (UN)",
+    "description": "UN day on yoga and wellbeing.",
+    "relevantFor": "Wellness, hospitality spas, care",
+    "notes": "Chair yoga for residents, garden sessions, spa programming"
+  },
+  {
+    "date": "06-23",
+    "event": "International Women in Engineering Day",
+    "category": "Awareness (UK-founded)",
+    "description": "UK-founded global day for women in engineering.",
+    "relevantFor": "Tech, construction, employers",
+    "notes": "Female engineer profiles, apprenticeship pushes"
+  },
+  {
+    "date": "07-07",
+    "event": "World Chocolate Day",
+    "category": "Awareness (social-first)",
+    "description": "Global chocolate day with easy UK traction.",
+    "relevantFor": "Food & drink, hospitality, retail",
+    "notes": "Dessert menus, chocolate pairings, taste tests"
+  },
+  {
+    "date": "07-17",
+    "event": "World Emoji Day",
+    "category": "Awareness (social-first)",
+    "description": "Internet-native day, pure social play.",
+    "relevantFor": "Consumer, hospitality, any playful brand",
+    "notes": "Emoji-only menus, guess-the-emoji games"
+  },
+  {
+    "date": "07-18",
+    "event": "Nelson Mandela International Day",
+    "category": "Awareness (UN)",
+    "description": "UN day encouraging 67 minutes of service.",
+    "relevantFor": "Charity, employers, community",
+    "notes": "Team volunteering, 67-minute challenges"
+  },
+  {
+    "date": "07-24",
+    "event": "International Self-Care Day",
+    "category": "Awareness",
+    "description": "Global self-care day.",
+    "relevantFor": "Wellness, care, beauty, hospitality spas",
+    "notes": "Self-care routines, carer self-care angle, spa content"
+  },
+  {
+    "date": "08-08",
+    "event": "International Cat Day",
+    "category": "Awareness (social-first)",
+    "description": "Global cat day, reliable social gold.",
+    "relevantFor": "Pet brands, consumer, care (therapy animals)",
+    "notes": "Office and resident cats, playful content"
+  },
+  {
+    "date": "08-13",
+    "event": "International Left-Handers Day",
+    "category": "Awareness (social-first)",
+    "description": "Celebrates left-handed life and its daily frustrations.",
+    "relevantFor": "Kitchenware, consumer, retail",
+    "notes": "Left-handed gadget content, design empathy stories"
+  },
+  {
+    "date": "08-26",
+    "event": "International Dog Day",
+    "category": "Awareness (social-first)",
+    "description": "Global dog day, strong UK social traction.",
+    "relevantFor": "Pet-friendly hospitality, care (therapy dogs), consumer",
+    "notes": "Therapy dog features, dog-friendly stays, staff dogs"
+  },
+  {
+    "date": "09-01",
+    "event": "World Alzheimer's Month",
+    "category": "Awareness (month)",
+    "description": "Global month on dementia awareness, anchored by World Alzheimer's Day on the 21st.",
+    "relevantFor": "Care, healthcare, charity",
+    "notes": "Dementia expertise, resident stories, myth-busting; plan a month arc not a single post",
+    "duration": 30
+  },
+  {
+    "date": "09-01",
+    "event": "Organic September",
+    "category": "Awareness (UK month)",
+    "description": "Soil Association's UK organic month.",
+    "relevantFor": "Food & drink, hospitality, retail, estates",
+    "notes": "Organic menus, supplier stories, kitchen garden content",
+    "duration": 30
+  },
+  {
+    "date": "09-05",
+    "event": "International Day of Charity",
+    "category": "Awareness (UN)",
+    "description": "UN day promoting charitable giving.",
+    "relevantFor": "Charity, employers, brands with CSR",
+    "notes": "Partnership stories, giving campaigns"
+  },
+  {
+    "date": "09-13",
+    "event": "Roald Dahl Story Day",
+    "category": "Cultural (UK)",
+    "description": "UK day celebrating Dahl and storytelling.",
+    "relevantFor": "Family brands, education, care (intergenerational)",
+    "notes": "Story swaps between residents and children, themed events"
+  },
+  {
+    "date": "3:sat:09",
+    "event": "World Cleanup Day",
+    "category": "Awareness",
+    "description": "Global community cleanup day. Floating, usually third Saturday of September.",
+    "relevantFor": "Sustainability, community, employers",
+    "notes": "Beach and street cleanups, before-and-after content"
+  },
+  {
+    "date": "09-21",
+    "event": "World Alzheimer's Day",
+    "category": "Awareness",
+    "description": "The anchor day of World Alzheimer's Month.",
+    "relevantFor": "Care, healthcare, charity",
+    "notes": "Expert comment, resident-led stories, practical guidance for families"
+  },
+  {
+    "date": "09-22",
+    "event": "Recycle Week",
+    "category": "Awareness (UK week)",
+    "description": "WRAP's UK recycling week. Floating week, confirm exact dates each year.",
+    "relevantFor": "Sustainability, retail, hospitality",
+    "notes": "Operational recycling stories, packaging commitments",
+    "duration": 7
+  },
+  {
+    "date": "09-29",
+    "event": "World Heart Day",
+    "category": "Awareness",
+    "description": "Global cardiovascular health day.",
+    "relevantFor": "Healthcare, food brands, fitness, employers",
+    "notes": "Heart-healthy menus, exercise programmes, screening pushes"
+  },
+  {
+    "date": "10-01",
+    "event": "International Coffee Day",
+    "category": "Awareness (social-first)",
+    "description": "Global coffee day with easy activation potential.",
+    "relevantFor": "Hospitality, food & drink, EV charging (coffee-while-charging), retail",
+    "notes": "Free coffee mechanics, barista content, coffee-and-charge offers"
+  },
+  {
+    "date": "10-01",
+    "event": "Breast Cancer Awareness Month",
+    "category": "Awareness (month)",
+    "description": "Global month, major UK charity presence.",
+    "relevantFor": "Healthcare, charity, employers, retail",
+    "notes": "Substantive fundraising and screening support only; no pinkwashing",
+    "duration": 31
+  },
+  {
+    "date": "10-11",
+    "event": "International Day of the Girl",
+    "category": "Awareness (UN)",
+    "description": "UN day on girls' rights and opportunity.",
+    "relevantFor": "Charity, education, employers",
+    "notes": "Mentoring schemes, education partnerships"
+  },
+  {
+    "date": "10-21",
+    "event": "Apple Day",
+    "category": "Cultural (UK)",
+    "description": "UK day celebrating apples and orchards, founded by Common Ground.",
+    "relevantFor": "Food & drink, estates, hospitality, retail",
+    "notes": "Orchard stories, apple menus, pressing days"
+  },
+  {
+    "date": "11-01",
+    "event": "Movember",
+    "category": "Awareness (month)",
+    "description": "Men's health month covering mental health, suicide prevention and cancers.",
+    "relevantFor": "Men's health, care, employers, hospitality",
+    "notes": "Moustache campaigns with substance, men's health conversations",
+    "duration": 30
+  },
+  {
+    "date": "11-25",
+    "event": "White Ribbon Day",
+    "category": "Awareness (UK)",
+    "description": "UK day against male violence against women; UN International Day for the Elimination of Violence against Women.",
+    "relevantFor": "Charity, employers, education",
+    "notes": "Ally pledges, workplace policy stories; serious tone only"
+  },
+  {
+    "date": "11-25",
+    "event": "16 Days of Activism",
+    "category": "Awareness (UN, runs to 10 Dec)",
+    "description": "UN campaign against gender-based violence, 25 Nov to 10 Dec.",
+    "relevantFor": "Charity, employers, education",
+    "notes": "Sustained campaign arc rather than one-day gesture",
+    "duration": 16
+  },
+  {
+    "date": "12-05",
+    "event": "International Volunteer Day",
+    "category": "Awareness (UN)",
+    "description": "UN day celebrating volunteering.",
+    "relevantFor": "Charity, employers, community",
+    "notes": "Volunteer profiles, end-of-year thank-yous"
   }
 ];
 

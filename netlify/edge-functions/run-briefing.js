@@ -18,19 +18,42 @@ const SEARCH_MODEL = "claude-sonnet-4-6";
 
 // ---------- Date helpers ----------
 
-function toDateThisCycle(dateStr, now) {
-  // "MM-DD" recurs annually: resolve to the next occurrence from today.
-  // "YYYY-MM-DD" is a one-off: resolve literally.
-  const oneOff = /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
-  if (oneOff) return new Date(dateStr + "T12:00:00Z");
-  const m = /^(\d{2})-(\d{2})$/.exec(dateStr);
-  if (!m) return null;
-  const year = now.getUTCFullYear();
-  let d = new Date(`${year}-${m[1]}-${m[2]}T12:00:00Z`);
-  if (d.getTime() < now.getTime() - 86400000) {
-    d = new Date(`${year + 1}-${m[1]}-${m[2]}T12:00:00Z`);
+function resolveEvent(dateStr, durationDays, now) {
+  // "MM-DD" recurs annually; "YYYY-MM-DD" is a one-off. Multi-day events
+  // (weeks, months, tournaments) stay live until their end date, so an
+  // ongoing month is never skipped just because its first day has passed.
+  const mk = (y, mm, dd) => new Date(y + "-" + mm + "-" + dd + "T12:00:00Z");
+  let start;
+  const floating = /^(\d|last):(mon|tue|wed|thu|fri|sat|sun):(\d{2})$/i.exec(dateStr);
+  if (floating) {
+    // Floating rule like "3:sun:06" (third Sunday of June) or "last:fri:09"
+    const dows = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+    const dow = dows[floating[2].toLowerCase()];
+    const month = parseInt(floating[3], 10);
+    const compute = (y) => {
+      if (floating[1].toLowerCase() === "last") {
+        const lastDay = new Date(Date.UTC(y, month, 0, 12));
+        return new Date(lastDay.getTime() - ((lastDay.getUTCDay() - dow + 7) % 7) * 86400000);
+      }
+      const first = new Date(Date.UTC(y, month - 1, 1, 12));
+      const offset = (dow - first.getUTCDay() + 7) % 7;
+      return new Date(first.getTime() + (offset + (parseInt(floating[1], 10) - 1) * 7) * 86400000);
+    };
+    start = compute(now.getUTCFullYear());
+    const end0 = new Date(start.getTime() + (durationDays - 1) * 86400000);
+    if (end0.getTime() < now.getTime() - 86400000) start = compute(now.getUTCFullYear() + 1);
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    start = new Date(dateStr + "T12:00:00Z");
+  } else {
+    const m = /^(\d{2})-(\d{2})$/.exec(dateStr);
+    if (!m) return null;
+    const y = now.getUTCFullYear();
+    start = mk(y, m[1], m[2]);
+    const end0 = new Date(start.getTime() + (durationDays - 1) * 86400000);
+    if (end0.getTime() < now.getTime() - 86400000) start = mk(y + 1, m[1], m[2]);
   }
-  return d;
+  const end = new Date(start.getTime() + (durationDays - 1) * 86400000);
+  return { start, end };
 }
 
 function bucketFor(daysOut) {
@@ -45,13 +68,23 @@ function fmtDate(d) {
 
 function computeWindow(events, windowDays) {
   const now = new Date();
+  const windowEnd = now.getTime() + windowDays * 86400000;
   const out = [];
   for (const e of events) {
-    const d = toDateThisCycle((e.date || "").trim(), now);
-    if (!d) continue;
-    const daysOut = Math.round((d.getTime() - now.getTime()) / 86400000);
-    if (daysOut < 0 || daysOut > windowDays) continue;
-    out.push({ ...e, resolvedDate: d.toISOString().slice(0, 10), niceDate: fmtDate(d), daysOut, bucket: bucketFor(daysOut) });
+    const duration = Math.max(1, parseInt(e.duration, 10) || 1);
+    const r = resolveEvent((e.date || "").trim(), duration, now);
+    if (!r) continue;
+    if (r.start.getTime() > windowEnd || r.end.getTime() < now.getTime() - 86400000) continue;
+    let daysOut = Math.round((r.start.getTime() - now.getTime()) / 86400000);
+    let niceDate, ongoing = false;
+    if (daysOut < 0) {
+      ongoing = true;
+      daysOut = 0;
+      niceDate = "Ongoing until " + fmtDate(r.end);
+    } else {
+      niceDate = fmtDate(r.start) + (duration > 1 ? ", runs " + duration + " days" : "");
+    }
+    out.push({ ...e, resolvedDate: r.start.toISOString().slice(0, 10), niceDate, daysOut, ongoing, duration, bucket: ongoing ? "radar" : bucketFor(daysOut) });
   }
   out.sort((a, b) => a.daysOut - b.daysOut);
   return out;
@@ -90,13 +123,13 @@ Only include events with a confirmed, specific date you found real evidence of. 
 
 // ---------- Composition ----------
 
-const HOUSE_STYLE = `WRITING RULES (Pic PR house style — non-negotiable):
-- British English throughout
-- No em dashes. Use en dashes sparingly, or restructure the sentence
+const HOUSE_STYLE = `WRITING RULES (Pic PR house style, non-negotiable, applies to EVERY field of your output):
+- British English throughout (organise, programme, colour; UK idiom)
+- NEVER output an em dash (the long dash) in any field. Not between clauses, not as punctuation, not anywhere. Use a colon, a comma, a full stop or restructure. En dashes only for ranges like 6-8 weeks
 - No Oxford commas
-- Avoid power-of-three sentence structures ("X, Y and Z" rhythm used as a rhetorical device)
-- Flowing, direct, confident prose. Vary sentence length
-- Banned: "I hope this finds you well", "reach out", "touch base", "testament to", "now more than ever", "in today's fast-paced world", "game-changer", "delve", "landscape" (figurative), "elevate", any AI-flavoured filler
+- Avoid power-of-three sentence structures (the "X, Y and Z" rhetorical rhythm)
+- Flowing, direct, confident prose. Vary sentence length. Specifics beat abstractions
+- Banned words and phrases: "I hope this finds you well", "reach out", "touch base", "testament to", "now more than ever", "in today's fast-paced world", "game-changer", "delve", "landscape" (figurative), "elevate", "leverage", "unlock", "vibrant", "bustling", "nestled", any AI-flavoured filler
 - No sycophancy, no hedging, no throat-clearing`;
 
 function buildComposePrompt(windowEvents, freshEvents, clients) {
@@ -110,7 +143,7 @@ function buildComposePrompt(windowEvents, freshEvents, clients) {
   }).join("\n");
 
   const evLines = windowEvents.map(e =>
-    `- [${e.bucket.toUpperCase()}] ${e.niceDate} (${e.daysOut} days out): ${e.event} — ${e.description}${e.relevantFor ? " Typically suits: " + e.relevantFor + "." : ""}${e.notes ? " Hooks: " + e.notes : ""}`
+    `- [${e.ongoing ? "ONGOING" : e.bucket.toUpperCase()}] ${e.niceDate}${e.ongoing ? "" : " (" + e.daysOut + " days out)"}: ${e.event} — ${e.description}${e.relevantFor ? " Typically suits: " + e.relevantFor + "." : ""}${e.notes ? " Hooks: " + e.notes : ""}`
   ).join("\n");
 
   const freshLines = freshEvents.length
@@ -134,14 +167,30 @@ THE CALENDAR (next 8 weeks):
 ${evLines}${freshLines}
 
 YOUR JOB:
-1. Pick the events with genuine client fit. Quality over coverage — a sharp briefing of 10-14 events beats a phone book. Skip events with no honest match.
-2. For each chosen event, name 1-3 best-fit clients. For each match give: a specific angle (1-2 sentences, an idea not a platitude), a format (e.g. expert comment, photo-led stunt, survey, social series) and a lead-time action for THIS WEEK.
-3. Respect every AVOID line absolutely. Prospects get bolder thinking.
-4. Events you considered but skipped go in "alsoNoted" as bare names so the team can see the full calendar at a glance.
-5. Write a 2-3 sentence intro: what matters most this week and why.
+1. AUGMENT THE CALENDAR FROM YOUR OWN KNOWLEDGE. Before choosing, add any awareness days, weeks and months falling in the window that the calendar misses: UN international days, established UK awareness weeks and months, and quirky days that justify social-first creative. VET EVERYTHING FOR UK RELEVANCE: where UK and US dates differ use the UK date (Mothering Sunday is not US Mother's Day), and exclude US-only observances (Thanksgiving, US Labor Day and similar) unless they have genuine UK media traction. Only include dates you are confident of; if unsure of the exact date, skip it. Treat anything you add exactly like a calendar event.
+2. Pick the events with genuine client fit. Quality over coverage: a sharp briefing of 12-16 events beats a phone book. Skip events with no honest match. Ongoing months and weeks are live opportunities, not missed ones; suggest the mid-period moment that still works.
+3. For each chosen event, name 1-3 best-fit clients. Every angle is a CREATIVE SEED, not a positioning statement: 2-3 sentences with a concrete mechanic, image or moment a journalist or social audience would actually see. Name the idea in quotes when a name earns it. Where the fit allows, make at least one match per event a bolder swing. A good seed makes someone want to paste it straight into the Idea Jacker and build it out.
+4. Social-first days earn their place when a client could own them with quick, charming creative; give those matches the format "Social-first" plus the content idea. The briefing should always carry a handful of these.
+5. Respect every AVOID line absolutely. Prospects get bolder thinking.
+6. Events you considered but skipped go in "alsoNoted" as bare names so the team can see the full calendar at a glance.
+7. DATE FIDELITY: copy each item's date field exactly as provided in the calendar line. Never invent, adjust or "correct" a weekday or date.
+8. Respect the bucket tags: an event tagged ACT belongs in the act section, PLAN in plan, RADAR or ONGOING in radar. Do not promote or demote events between sections.
+9. Write a 2-3 sentence intro: what matters most this week and why.
 
 Return ONLY valid JSON, no other text, exactly this shape:
 {"intro": "...", "sections": [{"key": "act", "title": "Act this week", "items": [{"event": "...", "date": "Mon 20 July", "daysOut": 40, "why": "one line on the moment itself", "matches": [{"client": "...", "angle": "...", "format": "...", "leadNote": "what to do this week"}]}]}, {"key": "plan", "title": "Start planning", "items": []}, {"key": "radar", "title": "On the radar", "items": []}], "alsoNoted": ["...", "..."]}`;
+}
+
+// Belt and braces: no em dash from any source survives into the output.
+function stripEmDashes(obj) {
+  if (typeof obj === "string") return obj.replace(/\s*\u2014\s*/g, ", ").replace(/\u2014/g, ", ").replace(/ ,/g, ",");
+  if (Array.isArray(obj)) return obj.map(stripEmDashes);
+  if (obj && typeof obj === "object") {
+    const out = {};
+    for (const k of Object.keys(obj)) out[k] = stripEmDashes(obj[k]);
+    return out;
+  }
+  return obj;
 }
 
 // ---------- Email rendering ----------
@@ -160,7 +209,7 @@ function renderEmailHTML(briefing, siteUrl) {
         <div style="font-size:13px;color:${muted};margin-top:2px;">${esc(it.why)}</div>
         ${(it.matches || []).map(m => `
           <div style="margin-top:8px;font-size:13.5px;color:${navy};line-height:1.5;">
-            <strong>${esc(m.client)}</strong> — ${esc(m.angle)}<br>
+            <strong>${esc(m.client)}:</strong> ${esc(m.angle)}<br>
             <span style="color:${teal};">Format:</span> ${esc(m.format)} · <span style="color:${teal};">This week:</span> ${esc(m.leadNote)}
           </div>`).join("")}
       </div>`).join("")}
@@ -265,7 +314,8 @@ export default async function handler(request) {
         const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("");
         const s = text.indexOf("{"), e = text.lastIndexOf("}");
         if (s === -1 || e === -1) throw new Error("The composer returned something unexpected.");
-        const composed = JSON.parse(text.slice(s, e + 1));
+        let composed = JSON.parse(text.slice(s, e + 1));
+        composed = stripEmDashes(composed);
 
         const now = new Date();
         const id = now.toISOString().slice(0, 10);
