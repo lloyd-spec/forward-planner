@@ -132,7 +132,7 @@ const HOUSE_STYLE = `WRITING RULES (Pic PR house style, non-negotiable, applies 
 - Banned words and phrases: "I hope this finds you well", "reach out", "touch base", "testament to", "now more than ever", "in today's fast-paced world", "game-changer", "delve", "landscape" (figurative), "elevate", "leverage", "unlock", "vibrant", "bustling", "nestled", any AI-flavoured filler
 - No sycophancy, no hedging, no throat-clearing`;
 
-function buildComposePrompt(windowEvents, freshEvents, clients) {
+function buildComposePrompt(windowEvents, freshEvents, clients, focusNames) {
   const clientLines = clients.filter(c => c.active !== false).map(c => {
     let l = `- ${c.name} (${c.industry}): ${c.description}`;
     if (c.topics) l += ` Topics: ${c.topics}.`;
@@ -166,7 +166,9 @@ ${clientLines}
 THE CALENDAR (next 8 weeks):
 ${evLines}${freshLines}
 
-YOUR JOB:
+${focusNames ? `FOCUSED PLAN RUN. This briefing is being built for ${focusNames.join(" and ")} ONLY. Cover EVERY event in the window with genuine fit for them, not just the strongest dozen. Where a moment really suits, give two distinct ideas. Depth over breadth: this is the raw material for a dedicated PR plan.
+
+` : ""}YOUR JOB:
 1. AUGMENT THE CALENDAR FROM YOUR OWN KNOWLEDGE. Before choosing, add any awareness days, weeks and months falling in the window that the calendar misses: UN international days, established UK awareness weeks and months, and quirky days that justify social-first creative. VET EVERYTHING FOR UK RELEVANCE: where UK and US dates differ use the UK date (Mothering Sunday is not US Mother's Day), and exclude US-only observances (Thanksgiving, US Labor Day and similar) unless they have genuine UK media traction. Only include dates you are confident of; if unsure of the exact date, skip it. Treat anything you add exactly like a calendar event.
 2. PROVENANCE HIERARCHY. Events carry a provenance tag: OFFICIAL (UN, WHO, government), CHARITY, CULTURAL, INDUSTRY (sector bodies; the care and hospitality weeks here are first-class for this roster) and COMMERCIAL (brand-invented or internet-origin days). COMMERCIAL days may ONLY appear as social-first ideas, never lead a section and never crowd out a stronger moment; one or two per briefing at most. When you augment from your own knowledge, apply the same classification and exclude pure brand inventions with no genuine UK media traction.
 3. Pick the events with genuine client fit. Quality over coverage: a sharp briefing of 12-16 events beats a phone book. Skip events with no honest match. Ongoing months and weeks are live opportunities, not missed ones; suggest the mid-period moment that still works.
@@ -336,11 +338,13 @@ export default async function handler(request) {
 
   // emailMode: "none" | "team" | "me". The cron URL's email=1 means "team".
   let emailMode = url.searchParams.get("email") === "1" ? "team" : "none";
+  let focusNames = null;
   if (request.method === "POST") {
     try {
       const b = await request.json();
       if (typeof b.email === "boolean") emailMode = b.email ? "team" : "none";
       if (b.emailMode === "none" || b.emailMode === "team" || b.emailMode === "me") emailMode = b.emailMode;
+      if (Array.isArray(b.clients) && b.clients.length) focusNames = b.clients;
     } catch (e) {}
   }
 
@@ -350,7 +354,14 @@ export default async function handler(request) {
       const send = (obj) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
       try {
         send({ type: "status", message: "Loading the calendar and client roster..." });
-        const [events, clients, settings] = await Promise.all([getEvents(), getClients(), getSettings()]);
+        const [events, allClients, settings] = await Promise.all([getEvents(), getClients(), getSettings()]);
+        let clients = allClients;
+        if (focusNames) {
+          const wanted = new Set(focusNames.map(n => String(n).toLowerCase()));
+          clients = allClients.filter(c => wanted.has(String(c.name || "").toLowerCase()));
+          if (!clients.length) clients = allClients;
+          else send({ type: "status", message: "Focused run: " + clients.map(c => c.name).join(", ") });
+        }
 
         let allEvents = events;
         if (settings.includeCommercial === false) {
@@ -386,7 +397,7 @@ export default async function handler(request) {
           model: COMPOSE_MODEL,
           max_tokens: 16000,
           stream: true,
-          messages: [{ role: "user", content: buildComposePrompt(windowEvents, fresh, clients) }]
+          messages: [{ role: "user", content: buildComposePrompt(windowEvents, fresh, clients, focusNames ? clients.map(c => c.name) : null) }]
         });
         let stopReason = "";
         for await (const ev of apiStream) {
@@ -411,10 +422,14 @@ export default async function handler(request) {
         composed = stripEmDashes(composed);
 
         const now = new Date();
-        const id = now.toISOString().slice(0, 10);
+        const focusLabel = focusNames && clients.length ? clients.map(c => c.name).join(" & ") : "";
+        const slug = focusLabel ? "-" + focusLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) : "";
+        const id = now.toISOString().slice(0, 10) + slug;
         const wc = now.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "Europe/London" });
         const eventCount = composed.sections.reduce((n, sec) => n + (sec.items || []).length, 0);
-        const subject = "Forward Planner · w/c " + wc + " · " + eventCount + " moments to own";
+        const subject = focusLabel
+          ? "Forward Plan · " + focusLabel + " · " + eventCount + " moments"
+          : "Forward Planner · w/c " + wc + " · " + eventCount + " moments to own";
 
         // Build "also on the calendar" ourselves from the real window,
         // so every leftover carries its true date and can be ideated on.

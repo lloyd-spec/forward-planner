@@ -87,22 +87,44 @@ async function init() {
 }
 
 // ============ Events (calendar) ============
-function sortKeyForEvent(e) {
-  // Sort by next occurrence: MM-DD entries map onto the current cycle
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function displayDate(e) {
   const d = (e.date || '').trim();
-  return /^\d{4}-/.test(d) ? d.slice(5) + '!' + d : d;
+  let m;
+  if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d))) return parseInt(m[3], 10) + ' ' + MONTH_NAMES[+m[2] - 1] + ' ' + m[1];
+  if ((m = /^(\d{2})-(\d{2})$/.exec(d))) return parseInt(m[2], 10) + ' ' + MONTH_NAMES[+m[1] - 1];
+  if ((m = /^(\d|last):(mon|tue|wed|thu|fri|sat|sun):(\d{2})$/i.exec(d))) {
+    const nth = m[1].toLowerCase() === 'last' ? 'Last' : ({ 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' })[m[1]];
+    const dow = m[2][0].toUpperCase() + m[2].slice(1);
+    return nth + ' ' + dow + ' of ' + MONTH_NAMES[+m[3] - 1];
+  }
+  return d;
+}
+
+function sortKeyForEvent(e) {
+  // A number meaning "place in the year": month x 100 + approximate day
+  const d = (e.date || '').trim();
+  let m;
+  if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d))) return (+m[2]) * 100 + (+m[3]);
+  if ((m = /^(\d{2})-(\d{2})$/.exec(d))) return (+m[1]) * 100 + (+m[2]);
+  if ((m = /^(\d|last):(mon|tue|wed|thu|fri|sat|sun):(\d{2})$/i.exec(d))) {
+    const nth = m[1].toLowerCase() === 'last' ? 4.3 : +m[1];
+    return (+m[3]) * 100 + Math.min(28, Math.round(nth * 7 - 3));
+  }
+  return 1300;
 }
 
 function renderEvents() {
   const q = ($('#event-search') ? $('#event-search').value : '').trim().toLowerCase();
-  let sorted = events.map((e, i) => ({ ...e, _i: i })).sort((a, b) => sortKeyForEvent(a).localeCompare(sortKeyForEvent(b)));
+  let sorted = events.map((e, i) => ({ ...e, _i: i })).sort((a, b) => sortKeyForEvent(a) - sortKeyForEvent(b));
   sorted = sorted.filter(e => activeProv.has(e.provenance || 'official'));
   if (q) sorted = sorted.filter(e => (e.event + ' ' + e.description + ' ' + e.relevantFor + ' ' + e.category).toLowerCase().includes(q));
   renderProvChips();
   const countNote = q ? `<p class="empty-note">${sorted.length} of ${events.length} events match "${escapeHtml(q)}"</p>` : '';
   const rows = sorted.map(e => `
     <tr>
-      <td><strong>${escapeHtml(e.date)}</strong>${(e.duration || 1) > 1 ? '<div class="muted">' + e.duration + ' days</div>' : ''}</td>
+      <td><strong>${escapeHtml(displayDate(e))}</strong>${(e.duration || 1) > 1 ? '<div class="muted">runs ' + e.duration + ' days</div>' : ''}</td>
       <td>${escapeHtml(e.event)}<div class="muted hide-mobile">${escapeHtml(e.description)}</div></td>
       <td class="hide-mobile muted">${escapeHtml(e.category)}</td>
       <td class="row-actions">
@@ -335,7 +357,35 @@ document.addEventListener('click', (e) => {
 });
 
 // ============ Run the engine ============
-$('#run-btn').addEventListener('click', async () => {
+$('#run-btn').addEventListener('click', () => {
+  const list = $('#run-client-list');
+  const active = clients.filter(c => c.active !== false);
+  list.innerHTML = active.map(c => `<label class="run-client-row"><input type="checkbox" value="${escapeHtml(c.name)}" checked> ${escapeHtml(c.name)}${c.prospect ? ' <span class="tag">PROSPECT</span>' : ''}</label>`).join('');
+  $('#run-all-clients').checked = true;
+  list.classList.add('hidden');
+  $('#run-modal').classList.remove('hidden');
+});
+
+document.addEventListener('click', (e) => {
+  if (e.target.id === 'run-modal-close' || e.target.id === 'run-modal') $('#run-modal').classList.add('hidden');
+  if (e.target.id === 'run-confirm') {
+    let names = null;
+    if (!$('#run-all-clients').checked) {
+      names = [...$('#run-client-list').querySelectorAll('input:checked')].map(i => i.value);
+      if (!names.length) { alert('Pick at least one client, or tick the full run.'); return; }
+    }
+    $('#run-modal').classList.add('hidden');
+    startRun(names);
+  }
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'run-all-clients') {
+    $('#run-client-list').classList.toggle('hidden', e.target.checked);
+  }
+});
+
+async function startRun(clientNames) {
   const btn = $('#run-btn');
   btn.disabled = true;
   btn.textContent = 'Running...';
@@ -349,7 +399,7 @@ $('#run-btn').addEventListener('click', async () => {
     const res = await fetch('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-password': PASSWORD },
-      body: JSON.stringify({ emailMode: $('#email-mode').value })
+      body: JSON.stringify({ emailMode: $('#email-mode').value, clients: clientNames || undefined })
     });
     if (!res.ok || !res.body) throw new Error('The engine did not start (' + res.status + ').');
 
@@ -384,7 +434,7 @@ $('#run-btn').addEventListener('click', async () => {
   }
   btn.disabled = false;
   btn.textContent = 'Run the briefing';
-});
+}
 
 // ============ Briefing render ============
 const BUCKET_ACCENT = { act: 'var(--navy)', plan: 'var(--teal-darker)', radar: 'var(--amber)' };

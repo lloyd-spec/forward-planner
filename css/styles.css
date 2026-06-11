@@ -211,3 +211,10 @@ body { font-family: var(--body); background: var(--cream); color: var(--navy-tex
 .also-date { font-size: 11.5px; color: var(--navy-muted); margin-top: 1px; }
 .also-ideate { font-size: 11px; font-weight: 700; font-family: inherit; padding: 6px 10px; border-radius: 7px; background: white; border: 0.5px solid var(--border-strong); color: var(--amber); cursor: pointer; white-space: nowrap; transition: all 0.13s ease; }
 .also-ideate:hover { border-color: var(--amber); background: var(--amber-soft); }
+
+/* ============ Run-options modal ============ */
+.run-modal-card { max-width: 480px; }
+.run-client-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; max-height: 300px; overflow-y: auto; padding: 10px 12px; background: var(--card); border: 0.5px solid var(--border); border-radius: 10px; margin-bottom: 6px; }
+.run-client-row { display: flex; align-items: center; gap: 7px; font-size: 13px; padding: 3px 0; cursor: pointer; }
+.run-client-row input { width: 14px; height: 14px; accent-color: var(--teal-dark); flex-shrink: 0; }
+@media (max-width: 560px) { .run-client-list { grid-template-columns: 1fr; } }
