@@ -272,9 +272,14 @@ export default async function handler(request) {
   const resendKey = Netlify.env.get("RESEND_API_KEY");
   if (!apiKey) return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY not set" }), { status: 500 });
 
-  let wantEmail = url.searchParams.get("email") === "1";
+  // emailMode: "none" | "team" | "me". The cron URL's email=1 means "team".
+  let emailMode = url.searchParams.get("email") === "1" ? "team" : "none";
   if (request.method === "POST") {
-    try { const b = await request.json(); if (typeof b.email === "boolean") wantEmail = b.email; } catch (e) {}
+    try {
+      const b = await request.json();
+      if (typeof b.email === "boolean") emailMode = b.email ? "team" : "none";
+      if (b.emailMode === "none" || b.emailMode === "team" || b.emailMode === "me") emailMode = b.emailMode;
+    } catch (e) {}
   }
 
   const encoder = new TextEncoder();
@@ -306,12 +311,26 @@ export default async function handler(request) {
 
         send({ type: "status", message: "Composing the briefing in house style..." });
         const client = new Anthropic({ apiKey });
-        const resp = await client.messages.create({
+        // Stream the composition and send a heartbeat every few seconds.
+        // A long silent await gets the connection cut by the infrastructure;
+        // a trickle of bytes keeps it alive however long the writing takes.
+        let text = "";
+        let lastBeat = Date.now();
+        const apiStream = await client.messages.create({
           model: COMPOSE_MODEL,
           max_tokens: 6000,
+          stream: true,
           messages: [{ role: "user", content: buildComposePrompt(windowEvents, fresh, clients) }]
         });
-        const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("");
+        for await (const ev of apiStream) {
+          if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "text_delta") {
+            text += ev.delta.text;
+            if (Date.now() - lastBeat > 4000) {
+              send({ type: "tick" });
+              lastBeat = Date.now();
+            }
+          }
+        }
         const s = text.indexOf("{"), e = text.lastIndexOf("}");
         if (s === -1 || e === -1) throw new Error("The composer returned something unexpected.");
         let composed = JSON.parse(text.slice(s, e + 1));
@@ -334,16 +353,21 @@ export default async function handler(request) {
         };
 
         const siteUrl = url.origin;
-        if (wantEmail) {
+        if (emailMode !== "none") {
+          let toList = settings.recipients;
+          if (emailMode === "me") {
+            toList = settings.personalEmail ? [settings.personalEmail] : [];
+            if (!toList.length) send({ type: "status", message: "No personal email set. Add yours in Settings to use 'just me' runs." });
+          }
           if (!resendKey) {
-            send({ type: "status", message: "RESEND_API_KEY not set — skipping the email, briefing saved to the archive." });
-          } else {
-            send({ type: "status", message: "Sending to " + settings.recipients.join(", ") + "..." });
+            send({ type: "status", message: "RESEND_API_KEY not set, skipping the email. Briefing saved to the archive." });
+          } else if (toList.length) {
+            send({ type: "status", message: "Sending to " + toList.join(", ") + "..." });
             try {
-              await sendEmail(resendKey, settings, subject, renderEmailHTML(briefing, siteUrl));
-              briefing.emailed = true;
+              await sendEmail(resendKey, { ...settings, recipients: toList }, subject, renderEmailHTML(briefing, siteUrl));
+              briefing.emailed = emailMode === "team";
             } catch (err) {
-              send({ type: "status", message: "Email failed: " + err.message + " — briefing still saved to the archive." });
+              send({ type: "status", message: "Email failed: " + err.message + ". Briefing still saved to the archive." });
             }
           }
         }

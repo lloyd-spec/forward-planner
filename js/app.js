@@ -235,6 +235,7 @@ async function persist(name, value, rerender) {
 function renderSettings() {
   $('#set-recipients').value = (settings.recipients || []).join(', ');
   $('#set-from').value = settings.fromAddress || '';
+  $('#set-personal').value = settings.personalEmail || '';
   $('#set-livesearch').checked = settings.liveSearch !== false;
   $('#cron-url').textContent = location.origin + '/api/run?key=YOUR-SECRET&email=1';
 }
@@ -242,6 +243,7 @@ function renderSettings() {
 $('#save-settings-btn').addEventListener('click', async () => {
   settings.recipients = $('#set-recipients').value.split(',').map(s => s.trim()).filter(Boolean);
   settings.fromAddress = $('#set-from').value.trim();
+  settings.personalEmail = $('#set-personal').value.trim();
   settings.liveSearch = $('#set-livesearch').checked;
   try {
     await saveStore('settings', settings);
@@ -300,7 +302,7 @@ $('#run-btn').addEventListener('click', async () => {
     const res = await fetch('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-password': PASSWORD },
-      body: JSON.stringify({ email: $('#email-checkbox').checked })
+      body: JSON.stringify({ emailMode: $('#email-mode').value })
     });
     if (!res.ok || !res.body) throw new Error('The engine did not start (' + res.status + ').');
 

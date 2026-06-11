@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=3">
+<link rel="stylesheet" href="css/styles.css?v=4">
 </head>
 <body>
 
@@ -34,7 +34,11 @@
         </div>
       </div>
       <div class="masthead-actions">
-        <label class="email-check"><input type="checkbox" id="email-checkbox"> Email it</label>
+        <select id="email-mode" class="email-mode" title="Where should this run's briefing go?">
+          <option value="none">Don't email</option>
+          <option value="team">Email the team</option>
+          <option value="me">Email just me</option>
+        </select>
         <button id="run-btn" class="primary-btn">Run the briefing</button>
       </div>
     </header>
@@ -85,6 +89,8 @@
             <input id="set-recipients" type="text">
             <label class="form-label" for="set-from">From address</label>
             <input id="set-from" type="text">
+            <label class="form-label" for="set-personal">Your email (for "just me" runs)</label>
+            <input id="set-personal" type="text" placeholder="you@picpr.com">
             <p class="hint">Until picpr.com is verified as a domain in Resend, keep the from address as onboarding@resend.dev and note Resend will only deliver to the email on your Resend account. Verify the domain (Resend → Domains → Add) to unlock pr@ and am@.</p>
           </div>
           <div class="settings-card">
@@ -109,6 +115,6 @@
     </footer>
   </div>
 
-<script src="js/app.js?v=3"></script>
+<script src="js/app.js?v=4"></script>
 </body>
 </html>
