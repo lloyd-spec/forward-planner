@@ -184,3 +184,30 @@ body { font-family: var(--body); background: var(--cream); color: var(--navy-tex
 .prov-chip.on { background: var(--teal-soft); color: var(--teal-darker); border-color: var(--teal-dark); }
 .prov-chip:hover { border-color: var(--teal-dark); }
 .edit-form select { width: 100%; padding: 9px 12px; font-size: 13px; font-family: inherit; background: var(--cream); border: 0.5px solid var(--border-strong); border-radius: 8px; color: var(--navy-text); }
+
+/* ============ Spoked-wheel loader ============ */
+.loader-row { display: flex; align-items: center; gap: 14px; padding: 4px 0 10px; }
+.spoke-wheel { width: 40px; height: 40px; animation: wheelspin 1.5s linear infinite; flex-shrink: 0; }
+.spoke-wheel .rim { fill: none; stroke: var(--teal-dark); stroke-width: 3.5; }
+.spoke-wheel .spokes line { stroke: var(--navy); stroke-width: 2.4; stroke-linecap: round; }
+.spoke-wheel .hub { fill: var(--navy); }
+@keyframes wheelspin { to { transform: rotate(360deg); } }
+.loader-label { font-family: var(--display); font-size: 16px; font-weight: 600; color: var(--navy); }
+.loader-sub { font-size: 12.5px; color: var(--navy-muted); }
+.dots::after { content: ''; animation: dots 1.4s steps(4, end) infinite; }
+@keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+.run-log div { padding: 2px 0; font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .spoke-wheel { animation: none; } .dots::after { content: '...'; animation: none; } }
+
+/* ============ Ideation modal ============ */
+.ideate-modal { position: fixed; inset: 0; background: rgba(10, 37, 64, 0.45); display: flex; align-items: flex-start; justify-content: center; padding: 5vh 16px; z-index: 90; overflow-y: auto; }
+.ideate-modal-card { background: var(--cream); border-radius: 16px; padding: 22px 24px; max-width: 780px; width: 100%; max-height: 88vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(10, 37, 64, 0.3); }
+
+/* ============ Also on the calendar ============ */
+.also-block { margin-top: 10px; }
+.also-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.also-card { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--card); border: 0.5px solid var(--border); border-radius: 10px; padding: 11px 13px; }
+.also-name { font-size: 13px; font-weight: 600; color: var(--navy); }
+.also-date { font-size: 11.5px; color: var(--navy-muted); margin-top: 1px; }
+.also-ideate { font-size: 11px; font-weight: 700; font-family: inherit; padding: 6px 10px; border-radius: 7px; background: white; border: 0.5px solid var(--border-strong); color: var(--amber); cursor: pointer; white-space: nowrap; transition: all 0.13s ease; }
+.also-ideate:hover { border-color: var(--amber); background: var(--amber-soft); }

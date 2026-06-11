@@ -12,6 +12,20 @@ let activeProv = new Set(PROVENANCES);
 let clients = [];
 let settings = {};
 
+function loaderHTML(label) {
+  return `<div class="loader-row">
+    <svg class="spoke-wheel" viewBox="0 0 44 44" aria-hidden="true">
+      <circle class="rim" cx="22" cy="22" r="19"/>
+      <g class="spokes">${[0, 30, 60, 90, 120, 150].map(d => `<line x1="22" y1="5" x2="22" y2="39" transform="rotate(${d} 22 22)"/>`).join('')}</g>
+      <circle class="hub" cx="22" cy="22" r="5.5"/>
+    </svg>
+    <div>
+      <div class="loader-label">${label}</div>
+      <div class="loader-sub"><span class="loader-elapsed">Working on it</span><span class="dots"></span></div>
+    </div>
+  </div>`;
+}
+
 function escapeHtml(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -327,7 +341,8 @@ $('#run-btn').addEventListener('click', async () => {
   btn.textContent = 'Running...';
   const statusEl = $('#run-status');
   statusEl.classList.remove('hidden');
-  statusEl.innerHTML = '';
+  statusEl.innerHTML = loaderHTML('Generating the briefing') + '<div class="run-log"></div>';
+  const runT0 = Date.now();
   document.querySelector('[data-tab="briefing"]').click();
 
   try {
@@ -351,9 +366,14 @@ $('#run-btn').addEventListener('click', async () => {
         if (!line.trim()) continue;
         let msg;
         try { msg = JSON.parse(line); } catch (e) { continue; }
-        if (msg.type === 'status') statusEl.innerHTML += '<div>' + escapeHtml(msg.message) + '</div>';
-        else if (msg.type === 'error') statusEl.innerHTML += '<div class="err">' + escapeHtml(msg.message) + '</div>';
+        if (msg.type === 'status') statusEl.querySelector('.run-log').innerHTML += '<div>' + escapeHtml(msg.message) + '</div>';
+        else if (msg.type === 'tick') {
+          const el = statusEl.querySelector('.loader-elapsed');
+          if (el) el.textContent = 'Still composing, ' + Math.round((Date.now() - runT0) / 1000) + 's in. Long thoughts take a moment';
+        }
+        else if (msg.type === 'error') statusEl.querySelector('.run-log').innerHTML += '<div class="err">' + escapeHtml(msg.message) + '</div>';
         else if (msg.type === 'done') {
+          statusEl.classList.add('hidden');
           renderBriefing(msg.briefing);
           loadArchive();
         }
@@ -411,8 +431,17 @@ function renderBriefing(b) {
     </div>`;
   }).join('');
 
-  const also = (b.alsoNoted || []).length
-    ? `<div class="brief-also"><strong>Also on the calendar:</strong> ${b.alsoNoted.map(escapeHtml).join(' · ')}</div>` : '';
+  const alsoItems = (b.alsoNoted || []).map(x => typeof x === 'string'
+    ? `<div class="also-card"><span class="also-name">${escapeHtml(x)}</span></div>`
+    : `<div class="also-card">
+         <div><div class="also-name">${escapeHtml(x.event)}</div><div class="also-date">${escapeHtml(x.date || '')}</div></div>
+         <button class="also-ideate" data-name="${escapeHtml(x.event)}">Generate ideas</button>
+       </div>`);
+  const also = alsoItems.length
+    ? `<div class="also-block">
+         <div class="brief-section-title" style="color:var(--navy-muted)"><span class="section-dot" style="background:var(--navy-muted)"></span>Also on the calendar<span class="section-count">${alsoItems.length}</span></div>
+         <div class="also-grid">${alsoItems.join('')}</div>
+       </div>` : '';
 
   $('#briefing-view').innerHTML = `
     <div class="brief-hero">
@@ -439,23 +468,37 @@ document.addEventListener('click', (e) => {
 });
 
 
-// ============ Ideate a single day ============
+// ============ Ideate a single day (modal, callable from anywhere) ============
 document.addEventListener('click', async (e) => {
-  const btn = e.target.closest('[data-ideate-event]');
-  if (btn) {
-    const ev = events[+btn.dataset.ideateEvent];
+  const cal = e.target.closest('[data-ideate-event]');
+  if (cal) {
+    const ev = events[+cal.dataset.ideateEvent];
     if (ev) runIdeation(ev);
     return;
   }
-  if (e.target.id === 'ideate-close') $('#ideate-panel').classList.add('hidden');
+  const also = e.target.closest('.also-ideate');
+  if (also) {
+    const name = also.dataset.name;
+    const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const match = events.find(ev => norm(ev.event) === norm(name)) ||
+                  events.find(ev => norm(ev.event).includes(norm(name)) || norm(name).includes(norm(ev.event)));
+    runIdeation(match || { event: name });
+    return;
+  }
+  if (e.target.id === 'ideate-close' || e.target.id === 'ideate-modal') {
+    $('#ideate-modal').classList.add('hidden');
+  }
 });
 
 async function runIdeation(ev) {
-  const panel = $('#ideate-panel');
-  panel.classList.remove('hidden');
-  panel.innerHTML = `<div class="ideate-head"><span class="ideate-title">Ideating: ${escapeHtml(ev.event)}</span><button id="ideate-close" class="secondary-btn">Close</button></div><div class="run-status" id="ideate-status"><div>Warming up...</div></div><div id="ideate-results"></div>`;
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  const modal = $('#ideate-modal');
+  modal.classList.remove('hidden');
+  $('#ideate-title').textContent = ev.event;
   const statusEl = $('#ideate-status');
+  statusEl.classList.remove('hidden');
+  statusEl.innerHTML = loaderHTML('Working up ideas') + '<div class="run-log"></div>';
+  $('#ideate-results').innerHTML = '';
+  const t0 = Date.now();
 
   try {
     const res = await fetch('/api/ideate', {
@@ -477,8 +520,12 @@ async function runIdeation(ev) {
         if (!line.trim()) continue;
         let msg;
         try { msg = JSON.parse(line); } catch (err) { continue; }
-        if (msg.type === 'status') statusEl.innerHTML += '<div>' + escapeHtml(msg.message) + '</div>';
-        else if (msg.type === 'error') statusEl.innerHTML += '<div class="err">' + escapeHtml(msg.message) + '</div>';
+        if (msg.type === 'status') statusEl.querySelector('.run-log').innerHTML += '<div>' + escapeHtml(msg.message) + '</div>';
+        else if (msg.type === 'tick') {
+          const el = statusEl.querySelector('.loader-elapsed');
+          if (el) el.textContent = 'Still writing, ' + Math.round((Date.now() - t0) / 1000) + 's in. Good ideas take a moment';
+        }
+        else if (msg.type === 'error') statusEl.querySelector('.run-log').innerHTML += '<div class="err">' + escapeHtml(msg.message) + '</div>';
         else if (msg.type === 'done') {
           statusEl.classList.add('hidden');
           $('#ideate-results').innerHTML = (msg.ideas || []).map(m => `
@@ -496,6 +543,6 @@ async function runIdeation(ev) {
       }
     }
   } catch (err) {
-    statusEl.innerHTML += '<div class="err">' + escapeHtml(err.message) + '</div>';
+    statusEl.querySelector('.run-log').innerHTML += '<div class="err">' + escapeHtml(err.message) + '</div>';
   }
 }

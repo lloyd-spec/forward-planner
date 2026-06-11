@@ -269,8 +269,16 @@ function renderEmailHTML(briefing, siteUrl) {
   `;
   }).join("");
 
-  const also = (briefing.alsoNoted || []).length
-    ? `<p style="font-size:12px;color:${muted};margin-top:24px;"><strong>Also on the calendar:</strong> ${briefing.alsoNoted.map(esc).join(" · ")}</p>`
+  const alsoEntries = (briefing.alsoNoted || []).map(x =>
+    typeof x === "string"
+      ? esc(x)
+      : esc(x.event) + ` <span style="color:${muted};">· ${esc(x.date || "")}</span>`);
+  const also = alsoEntries.length
+    ? `<div style="margin-top:28px;padding:16px 18px;background:#ffffff;border:1px solid #e3ddd0;border-radius:12px;">
+        <div style="font-size:12px;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;color:${teal};margin-bottom:10px;">&#9679;&nbsp; Also on the calendar</div>
+        <div style="font-size:13px;color:${navy};line-height:1.9;">${alsoEntries.join("<br>")}</div>
+        <div style="font-size:12px;color:${muted};margin-top:10px;">Open the <a href="${siteUrl}" style="color:${teal};">Forward Planner</a> and hit Generate ideas on any of these.</div>
+      </div>`
     : "";
 
   const thin = briefing.thinWarning
@@ -408,15 +416,24 @@ export default async function handler(request) {
         const eventCount = composed.sections.reduce((n, sec) => n + (sec.items || []).length, 0);
         const subject = "Forward Planner · w/c " + wc + " · " + eventCount + " moments to own";
 
+        // Build "also on the calendar" ourselves from the real window,
+        // so every leftover carries its true date and can be ideated on.
+        const normName = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+        const usedNames = [];
+        for (const sec of (composed.sections || [])) {
+          for (const it of (sec.items || [])) usedNames.push(normName(it.event));
+        }
+        const leftovers = windowEvents.filter(e => {
+          const n = normName(e.event);
+          return !usedNames.some(u => u.includes(n) || n.includes(u));
+        }).slice(0, 40).map(e => ({ event: e.event, date: e.niceDate, daysOut: e.daysOut }));
+
         const briefing = {
           id, date: now.toISOString(), subject,
           intro: composed.intro || "",
           thinWarning,
           sections: composed.sections || [],
-          alsoNoted: (() => {
-            const all = composed.alsoNoted || [];
-            return all.length > 30 ? all.slice(0, 30).concat(["plus " + (all.length - 30) + " more on the calendar"]) : all;
-          })(),
+          alsoNoted: leftovers,
           freshCount: fresh.length,
           emailed: false
         };

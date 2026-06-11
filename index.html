@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=7">
+<link rel="stylesheet" href="css/styles.css?v=8">
 </head>
 <body>
 
@@ -72,7 +72,6 @@
           </div>
         </div>
         <div id="prov-filters" class="prov-filters"></div>
-        <div id="ideate-panel" class="ideate-panel hidden"></div>
         <div id="event-form" class="edit-form hidden"></div>
         <div id="events-table"></div>
       </section>
@@ -121,6 +120,14 @@
     </footer>
   </div>
 
-<script src="js/app.js?v=7"></script>
+<div id="ideate-modal" class="ideate-modal hidden">
+    <div class="ideate-modal-card">
+      <div class="ideate-head"><span class="ideate-title" id="ideate-title"></span><button id="ideate-close" class="secondary-btn">Close</button></div>
+      <div id="ideate-status" class="run-status"></div>
+      <div id="ideate-results"></div>
+    </div>
+  </div>
+
+<script src="js/app.js?v=8"></script>
 </body>
 </html>
