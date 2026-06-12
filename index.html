@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=11">
+<link rel="stylesheet" href="css/styles.css?v=12">
 </head>
 <body>
 
@@ -55,7 +55,18 @@
       <section class="panel active" id="panel-briefing">
         <div id="run-status" class="run-status hidden"></div>
         <div id="briefing-view">
-          <p class="empty-note">No briefing loaded yet. Hit "Run the briefing" to generate one now, or open a past one from the Archive.</p>
+          <div class="welcome">
+            <div class="welcome-kicker">Monday briefing · six to eight weeks out</div>
+            <h2>Own what's coming.</h2>
+            <p>Each run reads the curated calendar and matches what's ahead to the client roster, with reactive angles ready to pitch before the moment arrives.</p>
+            <div class="welcome-chips">
+              <span class="w-chip amber">Awareness days</span>
+              <span class="w-chip teal">Cultural moments</span>
+              <span class="w-chip navy">Sport and seasonal fixtures</span>
+              <span class="w-chip sage">Charity campaigns</span>
+            </div>
+            <p class="welcome-hint">Hit "Run the briefing" to generate one now, or open a past one from the Archive.</p>
+          </div>
         </div>
       </section>
 
@@ -65,7 +76,7 @@
 
       <section class="panel" id="panel-calendar">
         <div class="panel-head">
-          <p class="panel-blurb">The curated calendar — the backbone of every briefing. Recurring events use <code>MM-DD</code> (e.g. <code>10-10</code> for World Mental Health Day); one-offs use <code>YYYY-MM-DD</code>. Edits save for the whole team instantly.</p>
+          <p class="panel-blurb">The curated calendar, the backbone of every briefing. Recurring events use <code>MM-DD</code> (e.g. <code>10-10</code> for World Mental Health Day); one-offs use <code>YYYY-MM-DD</code>. Edits save for the whole team instantly.</p>
           <div class="calendar-tools">
             <input type="text" id="event-search" placeholder="Search the calendar...">
             <button id="add-event-btn" class="secondary-btn">+ Add event</button>
@@ -128,6 +139,6 @@
     </div>
   </div>
 
-<script src="js/app.js?v=11"></script>
+<script src="js/app.js?v=12"></script>
 </body>
 </html>

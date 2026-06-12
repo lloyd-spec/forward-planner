@@ -3,7 +3,7 @@
 // this page reads and writes it through /api/data and runs the engine
 // through /api/run, which streams progress lines as it works.
 
-const FP_VERSION = 'v11';
+const FP_VERSION = 'v12';
 const PASSWORD = 'PicPR2026';
 const $ = (sel) => document.querySelector(sel);
 
@@ -28,7 +28,7 @@ window.addEventListener('error', (e) => {
 (function ensureRunModal() {
   if (document.getElementById('run-modal')) return;
   const style = document.createElement('style');
-  style.textContent = '.run-modal-card{max-width:480px}.run-client-list{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;max-height:300px;overflow-y:auto;padding:10px 12px;background:var(--card);border:0.5px solid var(--border);border-radius:10px;margin-bottom:6px}.run-client-row{display:flex;align-items:center;gap:7px;font-size:13px;padding:3px 0;cursor:pointer}.run-client-row input{width:14px;height:14px;accent-color:var(--teal-dark);flex-shrink:0}@media (max-width:560px){.run-client-list{grid-template-columns:1fr}}';
+  style.textContent = '.run-modal-card{max-width:480px}.run-client-list{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;max-height:300px;overflow-y:auto;padding:10px 12px;background:var(--card);border:0.5px solid var(--border);border-radius:10px;margin-bottom:6px}.run-client-row{display:flex;align-items:center;gap:7px;font-size:13px;padding:3px 0;cursor:pointer}.run-client-row input{width:14px;height:14px;accent-color:var(--teal-dark);flex-shrink:0}.run-list-note{grid-column:1/-1;font-size:13px;color:var(--navy-muted);padding:6px 2px}@media (max-width:560px){.run-client-list{grid-template-columns:1fr}}';
   document.head.appendChild(style);
   const d = document.createElement('div');
   d.id = 'run-modal';
@@ -48,20 +48,37 @@ window.addEventListener('error', (e) => {
 // crash during load. Delegated, so it works no matter what happens below.
 document.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'run-btn') {
-    try {
-      const modal = $('#run-modal');
-      const list = $('#run-client-list');
-      if (!modal || !list || !$('#run-all-clients')) { startRun(null); return; }
-      const active = (window.__clients || clients || []).filter(c => c.active !== false);
-      list.innerHTML = active.map(c => `<label class="run-client-row"><input type="checkbox" value="${escapeHtml(c.name)}" checked> ${escapeHtml(c.name)}${c.prospect ? ' <span class="tag">PROSPECT</span>' : ''}</label>`).join('');
-      $('#run-all-clients').checked = true;
-      list.classList.remove('hidden');
-      modal.classList.remove('hidden');
-    } catch (err) {
-      alert('Run button error: ' + err.message);
-    }
+    openRunModal().catch(err => alert('Run button error: ' + err.message));
   }
 });
+
+// Opens the run dialogue. If the roster isn't in memory yet (the page loads it
+// in the background) the dialogue fetches it on the spot, so the list is never blank.
+async function openRunModal() {
+  const modal = $('#run-modal');
+  const list = $('#run-client-list');
+  if (!modal || !list || !$('#run-all-clients')) { startRun(null); return; }
+  modal.classList.remove('hidden');
+  list.classList.remove('hidden');
+  $('#run-all-clients').checked = true;
+  let roster = (clients || []).filter(c => c.active !== false);
+  if (!roster.length) {
+    list.innerHTML = '<p class="run-list-note">Fetching the client roster...</p>';
+    try {
+      const fresh = await loadStore('clients');
+      if (Array.isArray(fresh) && fresh.length) clients = fresh;
+      roster = (clients || []).filter(c => c.active !== false);
+    } catch (err) {
+      list.innerHTML = '<p class="run-list-note">Could not fetch the roster (' + escapeHtml(err.message) + '). Hitting Run now will still cover every client on file.</p>';
+      return;
+    }
+  }
+  if (!roster.length) {
+    list.innerHTML = '<p class="run-list-note">No active clients found. Check the Clients tab. Hitting Run now will still cover every client on file.</p>';
+    return;
+  }
+  list.innerHTML = roster.map(c => `<label class="run-client-row"><input type="checkbox" value="${escapeHtml(c.name)}" checked> ${escapeHtml(c.name)}${c.prospect ? ' <span class="tag">PROSPECT</span>' : ''}</label>`).join('');
+}
 
 let events = [];
 const PROVENANCES = ['official', 'charity', 'cultural', 'industry', 'commercial'];
@@ -349,7 +366,7 @@ async function persist(name, value, rerender) {
     await saveStore(name, value);
     rerender();
   } catch (err) {
-    alert('Save failed: ' + err.message + '. Your change is still on screen — try saving again.');
+    alert('Save failed: ' + err.message + '. Your change is still on screen, try saving again.');
     rerender();
   }
 }
@@ -421,6 +438,7 @@ document.addEventListener('click', (e) => {
   if (e.target.id === 'run-modal-close' || e.target.id === 'run-modal') $('#run-modal').classList.add('hidden');
   if (e.target.id === 'run-confirm') {
     const boxes = [...document.querySelectorAll('#run-client-list input')];
+    if (!boxes.length) { $('#run-modal').classList.add('hidden'); startRun(null); return; }
     const ticked = boxes.filter(i => i.checked).map(i => i.value);
     if (!ticked.length) { alert('Tick at least one client.'); return; }
     const names = ticked.length === boxes.length ? null : ticked;

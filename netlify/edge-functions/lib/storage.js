@@ -37,11 +37,13 @@ export async function writeJSON(key, value) {
 }
 
 export async function getEvents() {
-  return await readJSON("events", SEED_EVENTS);
+  const e = await readJSON("events", null);
+  return Array.isArray(e) && e.length ? e : SEED_EVENTS;
 }
 
 export async function getClients() {
-  return await readJSON("clients", SEED_CLIENTS);
+  const c = await readJSON("clients", null);
+  return Array.isArray(c) && c.length ? c : SEED_CLIENTS;
 }
 
 export async function getSettings() {
