@@ -2,17 +2,12 @@
   publish = "."
   edge_functions = "netlify/edge-functions"
 
-# The data hatch — read/write events, clients, settings, archive
+# Route the streaming endpoint to an edge function (no timeout when streaming)
 [[edge_functions]]
-  path = "/api/data"
-  function = "data"
+  path = "/api/stream-ideas"
+  function = "stream-ideas"
 
-# The engine — generates, emails and archives the briefing (streams progress)
+# Route the "develop this idea" endpoint to its edge function
 [[edge_functions]]
-  path = "/api/run"
-  function = "run-briefing"
-
-# On-demand single-day ideation
-[[edge_functions]]
-  path = "/api/ideate"
-  function = "ideate-day"
+  path = "/api/develop-idea"
+  function = "develop-idea"
