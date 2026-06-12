@@ -117,6 +117,13 @@ function tryUnlock() {
 }
 $('#gate-submit').addEventListener('click', tryUnlock);
 $('#gate-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
+// Accept the key passed in links from the Creative Suite homepage,
+// so one unlock there opens this tool too
+const suiteKey = new URLSearchParams(location.search).get('k');
+if (suiteKey === PASSWORD) {
+  sessionStorage.setItem('fp_unlocked', '1');
+  history.replaceState(null, '', location.pathname);
+}
 if (sessionStorage.getItem('fp_unlocked') === '1') { $('#gate').classList.add('hidden'); init(); }
 
 // ============ Tabs ============
