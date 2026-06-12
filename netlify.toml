@@ -1,0 +1,18 @@
+[build]
+  publish = "."
+  edge_functions = "netlify/edge-functions"
+
+# The data hatch — read/write events, clients, settings, archive
+[[edge_functions]]
+  path = "/api/data"
+  function = "data"
+
+# The engine — generates, emails and archives the briefing (streams progress)
+[[edge_functions]]
+  path = "/api/run"
+  function = "run-briefing"
+
+# On-demand single-day ideation
+[[edge_functions]]
+  path = "/api/ideate"
+  function = "ideate-day"
