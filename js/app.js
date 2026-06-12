@@ -1,967 +1,682 @@
-/* ============================================================
-   The Idea Jacker — front-end logic
-   Streaming reveal · brand management · light-mode design
-   ============================================================ */
+// Forward Planner — front-end logic.
+// Data lives server-side in Netlify Blobs (one shared copy for the team);
+// this page reads and writes it through /api/data and runs the engine
+// through /api/run, which streams progress lines as it works.
 
-import { DEFAULT_BRANDS } from './default-brands.js';
-
+const FP_VERSION = 'v13';
 const PASSWORD = 'PicPR2026';
-const STORAGE_KEY = 'ij_brands';      // namespaced separately from News Jacker's "nj_clients"
-
-// The suite's shared roster lives in the Forward Planner's store —
-// one list for every tool, every team member, every device
-const PLANNER_URL = 'https://pic-pr-forward-planner.netlify.app';
-const ROSTER_API = PLANNER_URL + '/api/data?store=clients';
-const SHORTLIST_KEY = 'ij_shortlist';
-const MAX_ACTIVE_BRANDS = 5;
 const $ = (sel) => document.querySelector(sel);
 
-// ============================================================
-// Shortlist state — saved ideas persist in localStorage
-// ============================================================
-
-// As ideas render, we stash their full data here keyed by a content id,
-// so the save button can look the idea up when clicked.
-const renderedIdeaData = {};
-
-function ideaId(idea) {
-  // A stable id derived from the idea's content, so the same idea gets the
-  // same id across runs (lets us show the correct star state).
-  const str = (idea.concept || '') + '|' + (idea.headline || '');
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-  }
-  return 'idea_' + Math.abs(h).toString(36);
-}
-
-function loadShortlist() {
-  try {
-    const raw = localStorage.getItem(SHORTLIST_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
-  return [];
-}
-function persistShortlist() {
-  try { localStorage.setItem(SHORTLIST_KEY, JSON.stringify(shortlist)); } catch (e) {}
-}
-function isShortlisted(id) {
-  return shortlist.some(i => i.id === id);
-}
-function toggleShortlist(id) {
-  const idx = shortlist.findIndex(i => i.id === id);
-  if (idx >= 0) {
-    shortlist.splice(idx, 1);
-  } else {
-    const data = renderedIdeaData[id];
-    if (data) shortlist.push({ ...data, id, savedAt: new Date().toISOString() });
-  }
-  persistShortlist();
-  updateShortlistCount();
-}
-
-let shortlist = loadShortlist();
-
-function updateShortlistCount() {
-  const el = $('#shortlist-count');
-  if (el) el.textContent = shortlist.length;
-}
-
-// ============================================================
-// Header date
-// ============================================================
-function setHeaderDate() {
-  const el = $('#header-date');
-  if (!el) return;
-  const d = new Date();
-  el.textContent = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-}
-setHeaderDate();
-
-// ============================================================
-// Password gate
-// ============================================================
-function checkPassword() {
-  const input = $('#password-input').value;
-  const error = $('#password-error');
-  if (input === PASSWORD) {
-    $('#password-gate').classList.add('hidden');
-    $('#app').classList.remove('hidden');
-    sessionStorage.setItem('unlocked', 'yes');
-    initApp();
-  } else {
-    error.textContent = 'Incorrect password. Try again.';
-    $('#password-input').value = '';
-  }
-}
-$('#password-submit').addEventListener('click', checkPassword);
-$('#password-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') checkPassword();
+// Any script error becomes a visible banner instead of a silent death.
+// Stamp the running script version into the footer so it's always visible.
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('fp-version');
+  if (el) el.textContent = 'Forward Planner ' + FP_VERSION;
 });
 
-// ============================================================
-// Brand state — loaded from localStorage, falls back to defaults
-// ============================================================
-function loadBrands() {
+window.addEventListener('error', (e) => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
-  // Deep clone the defaults so we don't mutate the imported array
-  return JSON.parse(JSON.stringify(DEFAULT_BRANDS));
-}
-
-function saveBrands() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(brands));
-  } catch (e) {
-    console.warn('Could not save brands to localStorage:', e);
-  }
-}
-
-let brands = loadBrands();
-let editIdx = -1;  // index of brand being edited, -1 for "add new"
-
-// ============================================================
-// Init — runs after the password gate is cleared
-// ============================================================
-function initApp() {
-  renderBrandChips();
-  updateShortlistCount();
-  refreshSharedRoster();
-}
-
-// ============================================================
-// Shared roster — fetched from the Forward Planner so the whole
-// suite works from one client list. The ⭐ sector presets stay
-// local to this tool; selections survive each refresh; the last
-// good copy is cached so the tool still works if the fetch fails.
-// ============================================================
-async function refreshSharedRoster() {
-  try {
-    const res = await fetch(ROSTER_API, { headers: { 'x-password': PASSWORD } });
-    if (!res.ok) return;
-    const shared = await res.json();
-    if (!Array.isArray(shared) || shared.length === 0) return;
-    const selected = new Set(brands.filter(b => b.active).map(b => b.name));
-    const presets = brands.filter(b => b.name.trim().startsWith('⭐'));
-    const mapped = shared
-      .filter(c => c.active !== false)
-      .map(c => ({
-        name: c.name,
-        industry: c.industry || '',
-        location: c.location || '',
-        website: c.website || '',
-        description: c.description || '',
-        topics: c.topics || '',
-        tone: c.tone || '',
-        budget: c.budget || '',
-        noGo: c.avoid || '',
-        briefing: c.briefing || '',
-        active: selected.has(c.name)
-      }));
-    brands = [...presets, ...mapped];
-    saveBrands();
-    renderBrandChips();
-  } catch (e) {
-    console.warn('Shared roster fetch failed — using cached list:', e);
-  }
-}
-
-// ============================================================
-// Brand chip rendering — grouped by sector, active first, searchable
-// ============================================================
-
-let brandSearchQuery = '';
-
-function renderBrandChips() {
-  const container = $('#brand-chips');
-  if (!container) return;
-  container.innerHTML = '';
-
-  // 1. Filter by search query (matches name, industry, or topics)
-  const q = brandSearchQuery.toLowerCase().trim();
-  const filtered = brands
-    .map((brand, idx) => ({ brand, idx }))  // preserve original index for editing
-    .filter(({ brand }) => {
-      if (!q) return true;
-      const haystack = `${brand.name} ${brand.industry || ''} ${brand.topics || ''}`.toLowerCase();
-      return haystack.includes(q);
-    });
-
-  if (filtered.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'brand-empty-msg';
-    empty.textContent = q
-      ? `No brands match "${brandSearchQuery}".`
-      : 'No brands yet. Click "+ Add brand" to start.';
-    container.appendChild(empty);
-  } else {
-    // 2. Separate active brands (which go at the top)
-    const activeBrands = filtered.filter(({ brand }) => brand.active);
-    const inactiveBrands = filtered.filter(({ brand }) => !brand.active);
-
-    // 3. Render "Selected" group if any are active
-    if (activeBrands.length > 0) {
-      container.appendChild(renderGroup(
-        `Selected (${activeBrands.length}/${MAX_ACTIVE_BRANDS})`,
-        activeBrands,
-        'group-active'
-      ));
-    }
-
-    // 4. Group the inactive ones by industry, sort group names alphabetically
-    const byIndustry = {};
-    inactiveBrands.forEach(item => {
-      const key = (item.brand.industry || 'Other').trim() || 'Other';
-      if (!byIndustry[key]) byIndustry[key] = [];
-      byIndustry[key].push(item);
-    });
-
-    const industryOrder = Object.keys(byIndustry).sort((a, b) => {
-      // Push "Other" to the bottom
-      if (a === 'Other') return 1;
-      if (b === 'Other') return -1;
-      return a.localeCompare(b);
-    });
-
-    industryOrder.forEach(industry => {
-      // Sort each group alphabetically by name within (sector archetypes
-      // start with ⭐ so they naturally float to the top)
-      const items = byIndustry[industry].sort((a, b) => a.brand.name.localeCompare(b.brand.name));
-      container.appendChild(renderGroup(industry, items));
-    });
-  }
-
-  // 5. The "+ Add brand" chip sits in its own row at the very bottom
-  const addRow = document.createElement('div');
-  addRow.className = 'brand-chip-group brand-chip-group-add';
-  const addChip = document.createElement('button');
-  addChip.className = 'brand-chip-add';
-  addChip.textContent = '+ Add brand';
-  addChip.id = 'add-brand-chip';
-  addRow.appendChild(addChip);
-  container.appendChild(addRow);
-}
-
-/**
- * Render a labelled group of brand chips.
- */
-function renderGroup(label, items, extraClass = '') {
-  const group = document.createElement('div');
-  group.className = 'brand-chip-group ' + extraClass;
-
-  const heading = document.createElement('div');
-  heading.className = 'brand-chip-group-label';
-  heading.textContent = label;
-  group.appendChild(heading);
-
-  const row = document.createElement('div');
-  row.className = 'brand-chips';
-  items.forEach(({ brand, idx }) => {
-    row.appendChild(buildBrandChip(brand, idx));
-  });
-  group.appendChild(row);
-
-  return group;
-}
-
-/**
- * Build a single brand chip element (active state, edit, delete).
- */
-function buildBrandChip(brand, idx) {
-  const chip = document.createElement('span');
-  chip.className = 'brand-chip' + (brand.active ? ' active' : '');
-  chip.dataset.index = idx;
-
-  const name = document.createElement('span');
-  name.className = 'brand-chip-name';
-  name.textContent = brand.name;
-  chip.appendChild(name);
-
-  const editBtn = document.createElement('button');
-  editBtn.className = 'brand-chip-edit';
-  editBtn.dataset.action = 'edit';
-  editBtn.dataset.index = idx;
-  editBtn.title = 'Edit brand';
-  editBtn.innerHTML = '✎';
-  chip.appendChild(editBtn);
-
-  const deleteBtn = document.createElement('button');
-  deleteBtn.className = 'brand-chip-delete';
-  deleteBtn.dataset.action = 'delete';
-  deleteBtn.dataset.index = idx;
-  deleteBtn.title = 'Delete brand';
-  deleteBtn.innerHTML = '×';
-  chip.appendChild(deleteBtn);
-
-  return chip;
-}
-
-function activeBrandCount() {
-  return brands.filter(b => b.active).length;
-}
-
-// Wire up the search box — re-render on every keystroke
-document.addEventListener('input', (e) => {
-  if (e.target.id === 'brand-search') {
-    brandSearchQuery = e.target.value;
-    renderBrandChips();
-  }
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;bottom:12px;left:12px;right:12px;background:#b3403a;color:#fff;padding:11px 15px;border-radius:9px;z-index:999;font:13px Inter,sans-serif;';
+    d.textContent = 'Script error: ' + e.message + (e.lineno ? ' (line ' + e.lineno + ')' : '');
+    document.body.appendChild(d);
+  } catch (err) {}
 });
 
-// ============================================================
-// Brand chip event delegation — toggle, edit, delete, add
-// ============================================================
+// If the run-options dialogue isn't in the page's HTML, build it here.
+// This makes the feature self-contained: it cannot be lost to a stale index.html.
+(function ensureRunModal() {
+  if (document.getElementById('run-modal')) return;
+  const style = document.createElement('style');
+  style.textContent = '.run-modal-card{max-width:480px}.run-client-list{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;max-height:300px;overflow-y:auto;padding:10px 12px;background:var(--card);border:0.5px solid var(--border);border-radius:10px;margin-bottom:6px}.run-client-row{display:flex;align-items:center;gap:7px;font-size:13px;padding:3px 0;cursor:pointer}.run-client-row input{width:14px;height:14px;accent-color:var(--teal-dark);flex-shrink:0}.run-list-note{grid-column:1/-1;font-size:13px;color:var(--navy-muted);padding:6px 2px}@media (max-width:560px){.run-client-list{grid-template-columns:1fr}}';
+  document.head.appendChild(style);
+  const d = document.createElement('div');
+  d.id = 'run-modal';
+  d.className = 'ideate-modal hidden';
+  d.innerHTML = `
+    <div class="ideate-modal-card run-modal-card">
+      <div class="ideate-head"><span class="ideate-title">Run the briefing</span><button id="run-modal-close" class="secondary-btn">Close</button></div>
+      <p class="panel-blurb">Everyone is ticked for a full run. Untick down to one or two clients to build a dedicated forward plan. The email choice in the header still applies.</p>
+      <label class="toggle-row" style="margin:14px 0 10px;"><input type="checkbox" id="run-all-clients" checked> All clients</label>
+      <div id="run-client-list" class="run-client-list"></div>
+      <div class="form-buttons"><button id="run-confirm" class="primary-btn">Run now</button></div>
+    </div>`;
+  document.body.appendChild(d);
+})();
+
+// The Run button is wired here, at the top, before anything that could
+// crash during load. Delegated, so it works no matter what happens below.
 document.addEventListener('click', (e) => {
-  // "+ Add brand" chip OR the header "Add a brand" button
-  if (e.target.id === 'manage-clients-btn') {
-    window.open(PLANNER_URL + '/?k=' + encodeURIComponent(PASSWORD) + '#clients', '_blank');
-    return;
+  if (e.target && e.target.id === 'run-btn') {
+    openRunModal().catch(err => alert('Run button error: ' + err.message));
   }
-  if (e.target.id === 'add-brand-chip') {
-    openBrandModal(-1);
-    return;
-  }
+});
 
-  // Delete button on a chip
-  if (e.target.matches('.brand-chip-delete')) {
-    e.stopPropagation();
-    const idx = parseInt(e.target.dataset.index);
-    if (confirm(`Delete "${brands[idx].name}"? This can't be undone.`)) {
-      brands.splice(idx, 1);
-      saveBrands();
-      renderBrandChips();
-    }
-    return;
-  }
-
-  // Edit button on a chip
-  if (e.target.matches('.brand-chip-edit')) {
-    e.stopPropagation();
-    const idx = parseInt(e.target.dataset.index);
-    openBrandModal(idx);
-    return;
-  }
-
-  // Click on the chip body (or the name inside) — toggle active
-  const chip = e.target.closest('.brand-chip');
-  if (chip && !e.target.matches('.brand-chip-edit, .brand-chip-delete')) {
-    const idx = parseInt(chip.dataset.index);
-    const brand = brands[idx];
-    if (!brand.active && activeBrandCount() >= MAX_ACTIVE_BRANDS) {
-      showStatusError(`Maximum ${MAX_ACTIVE_BRANDS} brands per scan. Deselect one first.`);
+// Opens the run dialogue. If the roster isn't in memory yet (the page loads it
+// in the background) the dialogue fetches it on the spot, so the list is never blank.
+async function openRunModal() {
+  const modal = $('#run-modal');
+  const list = $('#run-client-list');
+  if (!modal || !list || !$('#run-all-clients')) { startRun(null); return; }
+  modal.classList.remove('hidden');
+  list.classList.remove('hidden');
+  $('#run-all-clients').checked = true;
+  let roster = (clients || []).filter(c => c.active !== false);
+  if (!roster.length) {
+    list.innerHTML = '<p class="run-list-note">Fetching the client roster...</p>';
+    try {
+      const fresh = await loadStore('clients');
+      if (Array.isArray(fresh) && fresh.length) clients = fresh;
+      roster = (clients || []).filter(c => c.active !== false);
+    } catch (err) {
+      list.innerHTML = '<p class="run-list-note">Could not fetch the roster (' + escapeHtml(err.message) + '). Hitting Run now will still cover every client on file.</p>';
       return;
     }
-    brand.active = !brand.active;
-    saveBrands();
-    chip.classList.toggle('active');
+  }
+  if (!roster.length) {
+    list.innerHTML = '<p class="run-list-note">No active clients found. Check the Clients tab. Hitting Run now will still cover every client on file.</p>';
     return;
   }
+  list.innerHTML = roster.map(c => `<label class="run-client-row"><input type="checkbox" value="${escapeHtml(c.name)}" checked> ${escapeHtml(c.name)}${c.prospect ? ' <span class="tag">PROSPECT</span>' : ''}</label>`).join('');
+}
+
+let events = [];
+const PROVENANCES = ['official', 'charity', 'cultural', 'industry', 'commercial'];
+let activeProv = new Set(PROVENANCES);
+let clients = [];
+let settings = {};
+
+function loaderHTML(label) {
+  return `<div class="loader-row">
+    <svg class="spoke-wheel" viewBox="0 0 44 44" aria-hidden="true">
+      <circle class="rim" cx="22" cy="22" r="19"/>
+      <g class="spokes">${[0, 30, 60, 90, 120, 150].map(d => `<line x1="22" y1="5" x2="22" y2="39" transform="rotate(${d} 22 22)"/>`).join('')}</g>
+      <circle class="hub" cx="22" cy="22" r="5.5"/>
+    </svg>
+    <div>
+      <div class="loader-label">${label}</div>
+      <div class="loader-sub"><span class="loader-elapsed">Working on it</span><span class="dots"></span></div>
+    </div>
+  </div>`;
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ============ Gate ============
+function tryUnlock() {
+  if ($('#gate-input').value === PASSWORD) {
+    sessionStorage.setItem('fp_unlocked', '1');
+    $('#gate').classList.add('hidden');
+    init();
+  } else {
+    $('#gate-error').textContent = 'Not quite. Try again.';
+    $('#gate-input').value = '';
+  }
+}
+$('#gate-submit').addEventListener('click', tryUnlock);
+$('#gate-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
+// Accept the key passed in links from the Creative Suite homepage,
+// so one unlock there opens this tool too
+const suiteKey = new URLSearchParams(location.search).get('k');
+if (suiteKey === PASSWORD) {
+  sessionStorage.setItem('fp_unlocked', '1');
+  history.replaceState(null, '', location.pathname);
+}
+if (sessionStorage.getItem('fp_unlocked') === '1') { $('#gate').classList.add('hidden'); init(); }
+
+// ============ Tabs ============
+$('#tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.tab');
+  if (!tab) return;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + tab.dataset.tab));
 });
 
-function showStatusError(msg) {
-  const status = $('#status');
-  status.classList.remove('hidden');
-  status.classList.remove('status-loading');
-  status.textContent = msg;
-  setTimeout(() => {
-    if (status.textContent === msg) status.classList.add('hidden');
-  }, 4000);
+// Links from the other suite tools can deep-link a tab, e.g. /#clients
+const wantedTab = location.hash.replace('#', '');
+if (wantedTab) {
+  const tabBtn = document.querySelector('[data-tab="' + wantedTab + '"]');
+  if (tabBtn) setTimeout(() => tabBtn.click(), 0);
 }
 
-// ============================================================
-// Brand modal — open / close / save / delete
-// ============================================================
-function openBrandModal(idx) {
-  editIdx = idx;
-  const isEdit = idx >= 0;
-  $('#brand-modal-title').textContent = isEdit ? 'Edit brand' : 'Add a brand';
-  $('#brand-modal-desc').textContent = isEdit
-    ? 'Update or delete this brand.'
-    : 'Add a new brand to match against creative ideas.';
-  $('#brand-save').textContent = isEdit ? 'Save changes' : 'Add brand';
-
-  // Show/hide the delete button (and reset link — only on Add, not Edit)
-  $('#brand-delete').classList.toggle('hidden', !isEdit);
-  const resetLink = $('#modal-footer-actions');
-  if (resetLink) resetLink.classList.toggle('hidden', isEdit);
-
-  // Populate the form
-  if (isEdit) {
-    const b = brands[idx];
-    $('#brand-name').value = b.name || '';
-    $('#brand-industry').value = b.industry || '';
-    $('#brand-location').value = b.location || '';
-    $('#brand-website').value = b.website || '';
-    $('#brand-description').value = b.description || '';
-    $('#brand-topics').value = b.topics || '';
-    $('#brand-tone').value = b.tone || '';
-    $('#brand-budget').value = b.budget || '';
-    $('#brand-nogo').value = b.noGo || '';
-    $('#brand-briefing').value = b.briefing || '';
-  } else {
-    ['brand-name', 'brand-industry', 'brand-location', 'brand-website', 'brand-description',
-     'brand-topics', 'brand-tone', 'brand-budget', 'brand-nogo', 'brand-briefing']
-      .forEach(id => { const el = $('#' + id); if (el) el.value = ''; });
-  }
-
-  $('#brand-modal').classList.remove('hidden');
-  setTimeout(() => $('#brand-name').focus(), 50);
+// ============ Data plumbing ============
+async function loadStore(name) {
+  const res = await fetch('/api/data?store=' + name, { headers: { 'x-password': PASSWORD } });
+  if (!res.ok) throw new Error('Could not load ' + name);
+  return res.json();
 }
 
-function closeBrandModal() {
-  $('#brand-modal').classList.add('hidden');
-  editIdx = -1;
+async function saveStore(name, value) {
+  const res = await fetch('/api/data?store=' + name, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'x-password': PASSWORD },
+    body: JSON.stringify(value)
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Save failed');
+  return data;
 }
 
-$('#brand-cancel').addEventListener('click', closeBrandModal);
-
-$('#brand-save').addEventListener('click', () => {
-  const name = $('#brand-name').value.trim();
-  if (!name) {
-    $('#brand-name').focus();
-    $('#brand-name').style.borderColor = 'var(--high)';
+async function init() {
+  try {
+    [events, clients, settings] = await Promise.all([
+      loadStore('events'), loadStore('clients'), loadStore('settings')
+    ]);
+  } catch (err) {
+    $('#briefing-view').innerHTML = '<p class="empty-note">Could not reach the data store: ' + escapeHtml(err.message) + '. If this is a fresh deploy, check that the site finished deploying and refresh.</p>';
     return;
   }
-  $('#brand-name').style.borderColor = '';
-
-  const brand = {
-    name,
-    industry: $('#brand-industry').value.trim(),
-    location: $('#brand-location').value.trim(),
-    website: $('#brand-website').value.trim(),
-    description: $('#brand-description').value.trim(),
-    topics: $('#brand-topics').value.trim(),
-    tone: $('#brand-tone').value.trim(),
-    budget: $('#brand-budget').value.trim(),
-    noGo: $('#brand-nogo').value.trim(),
-    briefing: $('#brand-briefing').value.trim(),
-    active: editIdx >= 0 ? brands[editIdx].active : false
-  };
-
-  if (editIdx >= 0) {
-    brands[editIdx] = brand;
-  } else {
-    brands.push(brand);
-  }
-  saveBrands();
-  renderBrandChips();
-  closeBrandModal();
-});
-
-$('#brand-delete').addEventListener('click', () => {
-  if (editIdx < 0) return;
-  if (confirm(`Delete "${brands[editIdx].name}"? This can't be undone.`)) {
-    brands.splice(editIdx, 1);
-    saveBrands();
-    renderBrandChips();
-    closeBrandModal();
-  }
-});
-
-// "Reset to defaults" — wipes localStorage and pulls in the full Pic PR starter list
-$('#brand-reset-all').addEventListener('click', () => {
-  const msg = `This will replace your entire brand list with the Pic PR defaults (${DEFAULT_BRANDS.length} brands).\n\n` +
-    `Any brands you've added or edited will be lost. This can't be undone.\n\n` +
-    `Continue?`;
-  if (!confirm(msg)) return;
-
-  // Second confirmation, because nuking the list is genuinely destructive
-  if (!confirm('Last chance. Really reset the whole list?')) return;
-
-  brands = JSON.parse(JSON.stringify(DEFAULT_BRANDS));
-  saveBrands();
-  renderBrandChips();
-  closeBrandModal();
-});
-
-// Close modal on Escape key, or on background click
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('#brand-modal').classList.contains('hidden')) {
-    closeBrandModal();
-  }
-});
-$('#brand-modal').addEventListener('click', (e) => {
-  if (e.target.id === 'brand-modal') closeBrandModal();
-});
-
-// ============================================================
-// Tolerant JSON parsing for streaming
-// (Same as before — closes unclosed braces/strings so partial
-// JSON can be parsed mid-stream)
-// ============================================================
-function parsePartialJson(text) {
-  if (!text) return null;
-  let buf = text.trim();
-  if (buf.startsWith('```json')) buf = buf.slice(7);
-  if (buf.startsWith('```')) buf = buf.slice(3);
-  if (buf.endsWith('```')) buf = buf.slice(0, -3);
-  buf = buf.trim();
-
-  let inString = false;
-  let escape = false;
-  let braces = 0, brackets = 0;
-  for (let i = 0; i < buf.length; i++) {
-    const ch = buf[i];
-    if (escape) { escape = false; continue; }
-    if (ch === '\\') { escape = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === '{') braces++;
-    else if (ch === '}') braces--;
-    else if (ch === '[') brackets++;
-    else if (ch === ']') brackets--;
-  }
-
-  if (inString) {
-    const lastQuote = buf.lastIndexOf('"');
-    if (lastQuote > 0) buf = buf.slice(0, lastQuote + 1);
-  }
-  buf = buf.replace(/,\s*$/, '');
-
-  let closer = '';
-  for (let i = 0; i < brackets; i++) closer += ']';
-  for (let i = 0; i < braces; i++) closer += '}';
-  buf += closer;
-
-  try { return JSON.parse(buf); } catch { return null; }
+  renderEvents();
+  renderClients();
+  renderSettings();
+  loadArchive();
 }
 
-// ============================================================
-// Run button — streams from /api/stream-ideas, reveals cards
-// ============================================================
-$('#run-btn').addEventListener('click', async () => {
-  const status = $('#status');
-  const results = $('#results');
-  const button = $('#run-btn');
+// ============ Events (calendar) ============
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  const activeBrands = brands.filter(b => b.active);
-  // No hard requirement — "general mode" runs with zero brands.
+function displayDate(e) {
+  const d = (e.date || '').trim();
+  let m;
+  if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d))) return parseInt(m[3], 10) + ' ' + MONTH_NAMES[+m[2] - 1] + ' ' + m[1];
+  if ((m = /^(\d{2})-(\d{2})$/.exec(d))) return parseInt(m[2], 10) + ' ' + MONTH_NAMES[+m[1] - 1];
+  if ((m = /^(\d|last):(mon|tue|wed|thu|fri|sat|sun):(\d{2})$/i.exec(d))) {
+    const nth = m[1].toLowerCase() === 'last' ? 'Last' : ({ 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th' })[m[1]];
+    const dow = m[2][0].toUpperCase() + m[2].slice(1);
+    return nth + ' ' + dow + ' of ' + MONTH_NAMES[+m[3] - 1];
+  }
+  return d;
+}
 
-  button.disabled = true;
-  status.classList.remove('hidden');
-  status.classList.add('status-loading');
-  status.textContent = activeBrands.length
-    ? `Starting… (${activeBrands.length} brand${activeBrands.length === 1 ? '' : 's'} selected)`
-    : 'Starting… (general mode — no brands selected)';
-  results.innerHTML = '';
+function sortKeyForEvent(e) {
+  // A number meaning "place in the year": month x 100 + approximate day
+  const d = (e.date || '').trim();
+  let m;
+  if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d))) return (+m[2]) * 100 + (+m[3]);
+  if ((m = /^(\d{2})-(\d{2})$/.exec(d))) return (+m[1]) * 100 + (+m[2]);
+  if ((m = /^(\d|last):(mon|tue|wed|thu|fri|sat|sun):(\d{2})$/i.exec(d))) {
+    const nth = m[1].toLowerCase() === 'last' ? 4.3 : +m[1];
+    return (+m[3]) * 100 + Math.min(28, Math.round(nth * 7 - 3));
+  }
+  return 1300;
+}
 
-  // Streaming status block
-  const streamStatus = document.createElement('div');
-  streamStatus.className = 'stream-status';
-  streamStatus.innerHTML = `
-    <div class="stream-status-title" id="stream-title">Reading the news…</div>
-    <div class="stream-status-sub" id="stream-sub">Scanning UK feeds for cultural patterns.</div>
-    <div class="stream-progress-bar"></div>
-  `;
-  results.appendChild(streamStatus);
+function renderEvents() {
+  const q = ($('#event-search') ? $('#event-search').value : '').trim().toLowerCase();
+  let sorted = events.map((e, i) => ({ ...e, _i: i })).sort((a, b) => sortKeyForEvent(a) - sortKeyForEvent(b));
+  sorted = sorted.filter(e => activeProv.has(e.provenance || 'official'));
+  if (q) sorted = sorted.filter(e => (e.event + ' ' + e.description + ' ' + e.relevantFor + ' ' + e.category).toLowerCase().includes(q));
+  renderProvChips();
+  const countNote = q ? `<p class="empty-note">${sorted.length} of ${events.length} events match "${escapeHtml(q)}"</p>` : '';
+  const rows = sorted.map(e => `
+    <tr>
+      <td><strong>${escapeHtml(displayDate(e))}</strong>${(e.duration || 1) > 1 ? '<div class="muted">runs ' + e.duration + ' days</div>' : ''}</td>
+      <td>${escapeHtml(e.event)}<div class="muted hide-mobile">${escapeHtml(e.description)}</div></td>
+      <td class="hide-mobile muted">${escapeHtml(e.category)}</td>
+      <td class="row-actions">
+        <button class="ideate-link" data-ideate-event="${e._i}">Ideate</button>
+        <button data-edit-event="${e._i}">Edit</button>
+        <button class="del" data-del-event="${e._i}">Delete</button>
+      </td>
+    </tr>`).join('');
+  $('#events-table').innerHTML = countNote + `
+    <table class="data-table">
+      <thead><tr><th>Date</th><th>Event</th><th class="hide-mobile">Category</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
 
-  let fullText = '';
-  const renderedThemes = [];
-  const renderedIdeas = [];
-  let totalRendered = 0;
-  currentSourcesMap = {};   // reset the evidence lookup for this run
+function eventFormHTML(e = {}, index = -1) {
+  return `
+    <div class="grid">
+      <div><label class="form-label">Date: MM-DD recurring, YYYY-MM-DD one-off, or floating like 3:sun:06 (third Sunday of June) / last:fri:09</label><input type="text" id="ef-date" value="${escapeHtml(e.date || '')}"></div>
+      <div><label class="form-label">Event name</label><input type="text" id="ef-event" value="${escapeHtml(e.event || '')}"></div>
+      <div><label class="form-label">Category</label><input type="text" id="ef-category" value="${escapeHtml(e.category || '')}" placeholder="Awareness / Cultural / Sport / Seasonal/Retail / Political/Economic"></div>
+      <div><label class="form-label">Typically suits (sectors)</label><input type="text" id="ef-relevant" value="${escapeHtml(e.relevantFor || '')}"></div>
+      <div><label class="form-label">Duration in days (1 for a single day, 7 for a week, 30 for a month)</label><input type="text" id="ef-duration" value="${escapeHtml(String(e.duration || 1))}"></div>
+      <div><label class="form-label">Provenance</label><select id="ef-provenance">${PROVENANCES.map(p => `<option value="${p}" ${(e.provenance || 'official') === p ? 'selected' : ''}>${p[0].toUpperCase() + p.slice(1)}</option>`).join('')}</select></div>
+      <div class="full"><label class="form-label">Description</label><textarea id="ef-description" rows="2">${escapeHtml(e.description || '')}</textarea></div>
+      <div class="full"><label class="form-label">Hook ideas / notes</label><textarea id="ef-notes" rows="2">${escapeHtml(e.notes || '')}</textarea></div>
+    </div>
+    <div class="form-buttons">
+      <button class="primary-btn" data-save-event="${index}">Save event</button>
+      <button class="secondary-btn" data-cancel-form="event">Cancel</button>
+    </div>`;
+}
+
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'event-search') renderEvents();
+});
+
+function renderProvChips() {
+  const counts = {};
+  for (const e of events) counts[e.provenance || 'official'] = (counts[e.provenance || 'official'] || 0) + 1;
+  $('#prov-filters').innerHTML = PROVENANCES.map(p => `
+    <button class="prov-chip ${activeProv.has(p) ? 'on' : ''}" data-prov="${p}">${p[0].toUpperCase() + p.slice(1)} <span>${counts[p] || 0}</span></button>`).join('');
+}
+
+document.addEventListener('click', (e) => {
+  const chip = e.target.closest('.prov-chip');
+  if (!chip) return;
+  const p = chip.dataset.prov;
+  if (activeProv.has(p)) activeProv.delete(p); else activeProv.add(p);
+  if (!activeProv.size) activeProv = new Set(PROVENANCES);
+  renderEvents();
+});
+
+// ============ Clients ============
+function renderClients() {
+  const rows = clients.map((c, i) => `
+    <tr>
+      <td><strong>${escapeHtml(c.name)}</strong>${c.prospect ? '<span class="tag">PROSPECT</span>' : ''}${c.active === false ? '<span class="tag off">RESTING</span>' : ''}<div class="muted hide-mobile">${escapeHtml(c.industry)}</div></td>
+      <td class="hide-mobile muted">${escapeHtml((c.tone || '').slice(0, 70))}</td>
+      <td class="row-actions">
+        <button data-edit-client="${i}">Edit</button>
+        <button class="del" data-del-client="${i}">Delete</button>
+      </td>
+    </tr>`).join('');
+  $('#clients-table').innerHTML = `
+    <table class="data-table">
+      <thead><tr><th>Client</th><th class="hide-mobile">Tone</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function clientFormHTML(c = {}, index = -1) {
+  return `
+    <div class="grid">
+      <div><label class="form-label">Name</label><input type="text" id="cf-name" value="${escapeHtml(c.name || '')}"></div>
+      <div><label class="form-label">Industry / location</label><input type="text" id="cf-industry" value="${escapeHtml(c.industry || '')}"></div>
+      <div class="full"><label class="form-label">Description</label><textarea id="cf-description" rows="2">${escapeHtml(c.description || '')}</textarea></div>
+      <div class="full"><label class="form-label">Topics (keywords for matching)</label><textarea id="cf-topics" rows="2">${escapeHtml(c.topics || '')}</textarea></div>
+      <div><label class="form-label">Tone of voice</label><input type="text" id="cf-tone" value="${escapeHtml(c.tone || '')}"></div>
+      <div><label class="form-label">Topics to avoid</label><input type="text" id="cf-avoid" value="${escapeHtml(c.avoid || '')}"></div>
+      <div><label class="form-label">Location</label><input type="text" id="cf-location" value="${escapeHtml(c.location || '')}"></div>
+      <div><label class="form-label">Website</label><input type="text" id="cf-website" value="${escapeHtml(c.website || '')}"></div>
+      <div><label class="form-label">Typical budget</label><input type="text" id="cf-budget" value="${escapeHtml(c.budget || '')}"></div>
+      <div class="full"><label class="form-label">Current briefing (what they're pitching right now — feeds all three tools)</label><textarea id="cf-briefing" rows="2">${escapeHtml(c.briefing || '')}</textarea></div>
+    </div>
+    <div class="form-buttons">
+      <label class="check-inline"><input type="checkbox" id="cf-prospect" ${c.prospect ? 'checked' : ''}> New business prospect</label>
+      <label class="check-inline"><input type="checkbox" id="cf-active" ${c.active === false ? '' : 'checked'}> Active</label>
+    </div>
+    <div class="form-buttons">
+      <button class="primary-btn" data-save-client="${index}">Save client</button>
+      <button class="secondary-btn" data-cancel-form="client">Cancel</button>
+    </div>`;
+}
+
+// ============ Shared click handling for tables and forms ============
+document.addEventListener('click', async (e) => {
+  const t = e.target;
+
+  if (t.id === 'add-event-btn') { $('#event-form').innerHTML = eventFormHTML(); $('#event-form').classList.remove('hidden'); }
+  if (t.dataset.editEvent !== undefined) { const i = +t.dataset.editEvent; $('#event-form').innerHTML = eventFormHTML(events[i], i); $('#event-form').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  if (t.dataset.delEvent !== undefined) {
+    const i = +t.dataset.delEvent;
+    if (confirm('Delete "' + events[i].event + '" from the calendar?')) {
+      events.splice(i, 1);
+      await persist('events', events, renderEvents);
+    }
+  }
+  if (t.dataset.saveEvent !== undefined) {
+    const i = +t.dataset.saveEvent;
+    const ev = {
+      date: $('#ef-date').value.trim(),
+      event: $('#ef-event').value.trim(),
+      category: $('#ef-category').value.trim(),
+      description: $('#ef-description').value.trim(),
+      relevantFor: $('#ef-relevant').value.trim(),
+      notes: $('#ef-notes').value.trim(),
+      duration: Math.max(1, parseInt($('#ef-duration').value, 10) || 1),
+      provenance: $('#ef-provenance').value
+    };
+    if (!ev.date || !ev.event) { alert('Date and event name are needed.'); return; }
+    if (!/^(\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/.test(ev.date)) { alert('Date must be MM-DD or YYYY-MM-DD.'); return; }
+    if (i === -1) events.push(ev); else events[i] = ev;
+    $('#event-form').classList.add('hidden');
+    await persist('events', events, renderEvents);
+  }
+
+  if (t.id === 'add-client-btn') { $('#client-form').innerHTML = clientFormHTML(); $('#client-form').classList.remove('hidden'); }
+  if (t.id === 'sync-roster-btn') {
+    t.disabled = true; t.textContent = 'Syncing…';
+    try {
+      const res = await fetch('/api/data?store=master-roster', { headers: { 'x-password': PASSWORD } });
+      if (!res.ok) throw new Error('Could not load the master list');
+      const master = await res.json();
+      const norm = (n) => (n || '').trim().toLowerCase().replace(/[\u2013\u2014-]/g, '-').replace(/\s*-\s*/g, ' - ').replace(/\s+/g, ' ');
+      const have = new Set(clients.map(c => norm(c.name)));
+      const added = [];
+      for (const m of master) {
+        if (!have.has(norm(m.name))) { clients.push(m); added.push(m.name); }
+      }
+      if (added.length) {
+        await persist('clients', clients, renderClients);
+        alert('Added ' + added.length + ' client(s) from the master list:\n' + added.join('\n'));
+      } else {
+        alert('Roster already matches the master list — nothing to add.');
+      }
+    } catch (err) {
+      alert('Sync failed: ' + err.message);
+    }
+    t.disabled = false; t.textContent = 'Sync master list';
+  }
+  if (t.dataset.editClient !== undefined) { const i = +t.dataset.editClient; $('#client-form').innerHTML = clientFormHTML(clients[i], i); $('#client-form').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  if (t.dataset.delClient !== undefined) {
+    const i = +t.dataset.delClient;
+    if (confirm('Delete ' + clients[i].name + ' from the roster?')) {
+      clients.splice(i, 1);
+      await persist('clients', clients, renderClients);
+    }
+  }
+  if (t.dataset.saveClient !== undefined) {
+    const i = +t.dataset.saveClient;
+    const c = {
+      ...(i === -1 ? {} : clients[i]),
+      name: $('#cf-name').value.trim(),
+      industry: $('#cf-industry').value.trim(),
+      description: $('#cf-description').value.trim(),
+      topics: $('#cf-topics').value.trim(),
+      tone: $('#cf-tone').value.trim(),
+      avoid: $('#cf-avoid').value.trim(),
+      location: $('#cf-location').value.trim(),
+      website: $('#cf-website').value.trim(),
+      budget: $('#cf-budget').value.trim(),
+      briefing: $('#cf-briefing').value.trim(),
+      prospect: $('#cf-prospect').checked,
+      active: $('#cf-active').checked
+    };
+    if (!c.name) { alert('A name is needed.'); return; }
+    if (i === -1) clients.push(c); else clients[i] = c;
+    $('#client-form').classList.add('hidden');
+    await persist('clients', clients, renderClients);
+  }
+
+  if (t.dataset.cancelForm === 'event') $('#event-form').classList.add('hidden');
+  if (t.dataset.cancelForm === 'client') $('#client-form').classList.add('hidden');
+
+  if (t.dataset.openBriefing) {
+    const res = await fetch('/api/data?store=briefing&id=' + encodeURIComponent(t.dataset.openBriefing), { headers: { 'x-password': PASSWORD } });
+    if (res.ok) {
+      renderBriefing(await res.json());
+      document.querySelector('[data-tab="briefing"]').click();
+    }
+  }
+});
+
+async function persist(name, value, rerender) {
+  try {
+    await saveStore(name, value);
+    rerender();
+  } catch (err) {
+    alert('Save failed: ' + err.message + '. Your change is still on screen, try saving again.');
+    rerender();
+  }
+}
+
+// ============ Settings ============
+function renderSettings() {
+  $('#set-recipients').value = (settings.recipients || []).join(', ');
+  $('#set-from').value = settings.fromAddress || '';
+  $('#set-personal').value = settings.personalEmail || '';
+  $('#set-livesearch').checked = settings.liveSearch !== false;
+  $('#set-commercial').checked = settings.includeCommercial !== false;
+  $('#cron-url').textContent = location.origin + '/api/run?key=YOUR-SECRET&email=1';
+}
+
+$('#save-settings-btn').addEventListener('click', async () => {
+  settings.recipients = $('#set-recipients').value.split(',').map(s => s.trim()).filter(Boolean);
+  settings.fromAddress = $('#set-from').value.trim();
+  settings.personalEmail = $('#set-personal').value.trim();
+  settings.liveSearch = $('#set-livesearch').checked;
+  settings.includeCommercial = $('#set-commercial').checked;
+  try {
+    await saveStore('settings', settings);
+    $('#settings-saved').textContent = 'Saved.';
+    setTimeout(() => { $('#settings-saved').textContent = ''; }, 2500);
+  } catch (err) {
+    alert('Save failed: ' + err.message);
+  }
+});
+
+// ============ Archive ============
+async function loadArchive() {
+  try {
+    const index = await loadStore('archive');
+    if (!index.length) {
+      $('#archive-list').innerHTML = '<p class="empty-note">No briefings yet. The first one lands here the moment you run the engine.</p>';
+      return;
+    }
+    $('#archive-list').innerHTML = index.map(b => `
+      <div class="archive-item" data-open-briefing="${escapeHtml(b.id)}">
+        <div>
+          <div class="archive-item-subject">${escapeHtml(b.subject)}</div>
+          <div class="archive-item-meta">${escapeHtml(b.id)}${b.emailed ? ' · emailed' : ' · not emailed'}</div>
+        </div>
+        <span>→</span>
+      </div>`).join('');
+  } catch (err) {
+    $('#archive-list').innerHTML = '<p class="empty-note">Could not load the archive: ' + escapeHtml(err.message) + '</p>';
+  }
+}
+
+// Make archive items clickable through their children
+document.addEventListener('click', (e) => {
+  const item = e.target.closest('.archive-item');
+  if (item && !e.target.dataset.openBriefing) {
+    const id = item.dataset.openBriefing;
+    if (id) {
+      fetch('/api/data?store=briefing&id=' + encodeURIComponent(id), { headers: { 'x-password': PASSWORD } })
+        .then(r => r.ok ? r.json() : null)
+        .then(b => { if (b) { renderBriefing(b); document.querySelector('[data-tab="briefing"]').click(); } });
+    }
+  }
+});
+
+// ============ Run the engine ============
+// (Run button is wired at the top of this file.)
+
+
+document.addEventListener('click', (e) => {
+  if (e.target.id === 'run-modal-close' || e.target.id === 'run-modal') $('#run-modal').classList.add('hidden');
+  if (e.target.id === 'run-confirm') {
+    const boxes = [...document.querySelectorAll('#run-client-list input')];
+    if (!boxes.length) { $('#run-modal').classList.add('hidden'); startRun(null); return; }
+    const ticked = boxes.filter(i => i.checked).map(i => i.value);
+    if (!ticked.length) { alert('Tick at least one client.'); return; }
+    const names = ticked.length === boxes.length ? null : ticked;
+    $('#run-modal').classList.add('hidden');
+    startRun(names);
+  }
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'run-all-clients') {
+    document.querySelectorAll('#run-client-list input').forEach(i => { i.checked = e.target.checked; });
+  } else if (e.target.closest && e.target.closest('#run-client-list')) {
+    const boxes = [...document.querySelectorAll('#run-client-list input')];
+    $('#run-all-clients').checked = boxes.every(i => i.checked);
+  }
+});
+
+async function startRun(clientNames) {
+  const btn = $('#run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  const statusEl = $('#run-status');
+  statusEl.classList.remove('hidden');
+  statusEl.innerHTML = loaderHTML('Generating the briefing') + '<div class="run-log"></div>';
+  const runT0 = Date.now();
+  document.querySelector('[data-tab="briefing"]').click();
 
   try {
-    const response = await fetch('/api/stream-ideas', {
+    const res = await fetch('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-password': PASSWORD },
-      body: JSON.stringify({ brands: activeBrands })
+      body: JSON.stringify({ emailMode: $('#email-mode').value, clients: clientNames || undefined })
     });
+    if (!res.ok || !res.body) throw new Error('The engine did not start (' + res.status + ').');
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Server returned ${response.status}: ${errText.slice(0, 200)}`);
-    }
-
-    const reader = response.body.getReader();
+    const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop();
-
       for (const line of lines) {
         if (!line.trim()) continue;
-        try {
-          const msg = JSON.parse(line);
-          handleStreamMessage(msg);
-        } catch (err) {
-          console.warn('Bad stream message:', line);
+        let msg;
+        try { msg = JSON.parse(line); } catch (e) { continue; }
+        if (msg.type === 'status') statusEl.querySelector('.run-log').innerHTML += '<div>' + escapeHtml(msg.message) + '</div>';
+        else if (msg.type === 'tick') {
+          const el = statusEl.querySelector('.loader-elapsed');
+          if (el) el.textContent = 'Still composing, ' + Math.round((Date.now() - runT0) / 1000) + 's in. Long thoughts take a moment';
+        }
+        else if (msg.type === 'error') statusEl.querySelector('.run-log').innerHTML += '<div class="err">' + escapeHtml(msg.message) + '</div>';
+        else if (msg.type === 'done') {
+          statusEl.classList.add('hidden');
+          renderBriefing(msg.briefing);
+          loadArchive();
         }
       }
     }
   } catch (err) {
-    status.textContent = 'Something went wrong: ' + err.message;
-    status.classList.remove('status-loading');
-  } finally {
-    button.disabled = false;
+    statusEl.innerHTML += '<div class="err">' + escapeHtml(err.message) + '</div>';
   }
-
-  function handleStreamMessage(msg) {
-    if (msg.type === 'status') {
-      const titleEl = $('#stream-title');
-      if (titleEl) titleEl.textContent = msg.message;
-    }
-    else if (msg.type === 'newsDone') {
-      if (msg.sources) currentSourcesMap = msg.sources;
-      const sourcesEl = $('#sources-count');
-      if (sourcesEl) sourcesEl.textContent = `${msg.totalStories || 0} stories scanned`;
-      const titleEl = $('#stream-title');
-      const subEl = $('#stream-sub');
-      if (titleEl) titleEl.textContent = 'Pitching to the imaginary creative review…';
-      if (subEl) subEl.textContent = `${msg.totalStories} stories in ${msg.seconds}s. Cards will appear below as Claude writes them.`;
-    }
-    else if (msg.type === 'delta') {
-      fullText += msg.text;
-      tryReveal();
-    }
-    else if (msg.type === 'done') {
-      const streamEl = $('.stream-status');
-      if (streamEl) streamEl.remove();
-      status.classList.remove('status-loading');
-
-      if (msg.parseError && totalRendered === 0) {
-        results.innerHTML = `<div class="error-block">
-          <h3>Claude returned text that couldn't be parsed</h3>
-          <p>The prompt probably needs tweaking. Raw response below.</p>
-          <pre>${escapeHtml(msg.rawText || '')}</pre>
-        </div>`;
-        status.textContent = 'Parse error.';
-        return;
-      }
-      if (msg.themes && Array.isArray(msg.themes)) {
-        renderAllThemes(msg.themes);
-      }
-      const themes = msg.themes || [];
-      const ideaCount = themes.reduce((s, t) => s + (t.ideas?.length || 0), 0);
-      const brandSuffix = activeBrands.length ? ` for ${activeBrands.map(b => b.name).join(', ')}` : '';
-      status.textContent = `Done. ${themes.length} themes · ${ideaCount} ideas${brandSuffix}.`;
-    }
-    else if (msg.type === 'error') {
-      status.textContent = 'Server error: ' + msg.message;
-      status.classList.remove('status-loading');
-    }
-  }
-
-  function tryReveal() {
-    const parsed = parsePartialJson(fullText);
-    if (!parsed || !parsed.themes || !Array.isArray(parsed.themes)) return;
-
-    if (parsed.themes.length > 0 && totalRendered === 0) {
-      const streamEl = $('.stream-status');
-      if (streamEl) streamEl.remove();
-    }
-
-    parsed.themes.forEach((theme, themeIdx) => {
-      if (!theme || !theme.name || !theme.summary) return;
-
-      if (!renderedThemes[themeIdx]) {
-        const node = document.createElement('section');
-        node.className = 'theme-block';
-        node.innerHTML = renderThemeShell(theme, themeIdx);
-        results.appendChild(node);
-        renderedThemes[themeIdx] = node;
-        renderedIdeas[themeIdx] = [];
-        totalRendered++;
-      }
-
-      const ideas = theme.ideas || [];
-      const ideasGrid = renderedThemes[themeIdx].querySelector('.ideas-grid');
-
-      ideas.forEach((idea, ideaIdx) => {
-        if (!idea || !idea.concept || !idea.headline) return;
-        if (renderedIdeas[themeIdx][ideaIdx]) return;
-
-        const card = document.createElement('article');
-        card.className = 'idea-card';
-        card.innerHTML = renderIdeaBody(idea, theme);
-        ideasGrid.appendChild(card);
-        renderedIdeas[themeIdx][ideaIdx] = card;
-        totalRendered++;
-      });
-    });
-  }
-
-  function renderAllThemes(themes) {
-    themes.forEach((theme, themeIdx) => {
-      if (!renderedThemes[themeIdx]) {
-        const node = document.createElement('section');
-        node.className = 'theme-block';
-        node.innerHTML = renderThemeShell(theme, themeIdx);
-        results.appendChild(node);
-        renderedThemes[themeIdx] = node;
-        renderedIdeas[themeIdx] = [];
-      } else {
-        // Theme already on screen from streaming — refresh its evidence block
-        // now that we have the complete, correctly-parsed evidence IDs.
-        refreshThemeEvidence(renderedThemes[themeIdx], theme);
-      }
-      const ideasGrid = renderedThemes[themeIdx].querySelector('.ideas-grid');
-      (theme.ideas || []).forEach((idea, ideaIdx) => {
-        if (renderedIdeas[themeIdx][ideaIdx]) return;
-        const card = document.createElement('article');
-        card.className = 'idea-card';
-        card.innerHTML = renderIdeaBody(idea, theme);
-        ideasGrid.appendChild(card);
-        renderedIdeas[themeIdx][ideaIdx] = card;
-      });
-    });
-  }
-});
-
-// Replace a rendered theme's evidence <details> with a freshly-resolved one
-function refreshThemeEvidence(node, theme) {
-  if (!node) return;
-  const evidenceItems = (theme.evidence || []).filter(e => e !== null && e !== undefined && e !== '');
-  if (evidenceItems.length === 0) return;
-  const existing = node.querySelector('.theme-evidence');
-  const html = `<summary>Evidence from the news (${evidenceItems.length})</summary>
-    <ul>${evidenceItems.map(renderEvidenceItem).join('')}</ul>`;
-  if (existing) {
-    const wasOpen = existing.open;
-    existing.innerHTML = html;
-    existing.open = wasOpen;
-  }
+  btn.disabled = false;
+  btn.textContent = 'Run the briefing';
 }
 
-// ============================================================
-// Shortlist — save buttons, modal, export
-// ============================================================
+// ============ Briefing render ============
+const BUCKET_ACCENT = { act: 'var(--navy)', plan: 'var(--teal-darker)', radar: 'var(--amber)' };
 
-// Save/unsave when a star button is clicked (event delegation)
-document.addEventListener('click', (e) => {
-  const saveBtn = e.target.closest('.idea-save-btn');
-  if (saveBtn) {
-    const id = saveBtn.dataset.ideaId;
-    toggleShortlist(id);
-    const saved = isShortlisted(id);
-    saveBtn.classList.toggle('active', saved);
-    const star = saveBtn.querySelector('.star-icon');
-    if (star) star.textContent = saved ? '★' : '☆';
-    return;
-  }
-
-  // Open the shortlist panel
-  if (e.target.id === 'shortlist-btn' || e.target.closest('#shortlist-btn')) {
-    openShortlistModal();
-    return;
-  }
-  if (e.target.id === 'shortlist-close') {
-    $('#shortlist-modal').classList.add('hidden');
-    return;
-  }
-  if (e.target.id === 'shortlist-modal') {
-    $('#shortlist-modal').classList.add('hidden');
-    return;
-  }
-
-  // Remove a single idea from inside the shortlist panel
-  const removeBtn = e.target.closest('.shortlist-remove');
-  if (removeBtn) {
-    const id = removeBtn.dataset.ideaId;
-    const idx = shortlist.findIndex(i => i.id === id);
-    if (idx >= 0) {
-      shortlist.splice(idx, 1);
-      persistShortlist();
-      updateShortlistCount();
-      renderShortlistItems();
-      // Also un-star the matching card if it's on screen
-      const card = document.querySelector(`.idea-save-btn[data-idea-id="${id}"]`);
-      if (card) {
-        card.classList.remove('active');
-        const star = card.querySelector('.star-icon');
-        if (star) star.textContent = '☆';
-      }
-    }
-    return;
-  }
-});
-
-function openShortlistModal() {
-  renderShortlistItems();
-  $('#shortlist-modal').classList.remove('hidden');
+function seedTextFor(eventName, m) {
+  const bits = [];
+  if (m.idea) bits.push(m.idea.replace(/^"|"$/g, ''));
+  bits.push((m.concept || m.angle || '').trim());
+  if (m.headline) bits.push('Example headline: ' + m.headline);
+  if (m.media || m.format) bits.push('Target media: ' + (m.media || m.format));
+  return 'Pegged to ' + eventName + '. ' + bits.join(' ');
 }
 
-function renderShortlistItems() {
-  const container = $('#shortlist-items');
-  const exportActions = $('#shortlist-export-actions');
-  if (!container) return;
+function renderBriefing(b) {
+  const totalIdeas = (b.sections || []).reduce((n, s) => n + (s.items || []).reduce((m, it) => m + (it.matches || []).length, 0), 0);
+  const chips = [
+    (b.sections || []).reduce((n, s) => n + (s.items || []).length, 0) + ' moments',
+    totalIdeas + ' ideas',
+    b.freshCount ? b.freshCount + ' fresh finds' : '',
+    b.emailed ? 'Emailed to the team' : ''
+  ].filter(Boolean);
 
-  if (shortlist.length === 0) {
-    container.innerHTML = '<div class="shortlist-empty">No saved ideas yet. Tap the ☆ on any idea to save it here.</div>';
-    if (exportActions) exportActions.style.display = 'none';
-    return;
-  }
-  if (exportActions) exportActions.style.display = '';
-
-  // Most recently saved first
-  const items = [...shortlist].reverse();
-  container.innerHTML = items.map(idea => `
-    <article class="shortlist-item">
-      <div class="shortlist-item-top">
-        <span class="budget-chip ${budgetTierClass(idea.budgetTier)}">${escapeHtml(idea.budgetTier || 'Unspecified')}</span>
-        <button class="shortlist-remove" data-idea-id="${idea.id}" title="Remove from shortlist" aria-label="Remove">×</button>
-      </div>
-      <div class="shortlist-item-concept">${escapeHtml(idea.concept || '')}</div>
-      <div class="shortlist-item-headline">"${escapeHtml(idea.headline || '')}"</div>
-      <div class="shortlist-item-meta">
-        ${idea.format ? `<span>${escapeHtml(idea.format)}</span>` : ''}
-        ${idea.brandFit ? `<span>· ${escapeHtml(idea.brandFit)}</span>` : ''}
-        ${idea.themeName ? `<span>· ${escapeHtml(idea.themeName)}</span>` : ''}
-      </div>
-      <button class="idea-develop-btn shortlist-develop" data-idea-id="${idea.id}">Develop this idea →</button>
-    </article>
-  `).join('');
-}
-
-function buildExportText() {
-  const date = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  let out = `THE IDEA JACKER — SHORTLIST\nExported ${date}\n${shortlist.length} idea${shortlist.length === 1 ? '' : 's'}\n\n`;
-  out += '='.repeat(60) + '\n\n';
-  shortlist.forEach((idea, i) => {
-    out += `${i + 1}. ${idea.concept}\n\n`;
-    out += `   Headline: "${idea.headline}"\n`;
-    out += `   Budget tier: ${idea.budgetTier || '—'}\n`;
-    out += `   Format: ${idea.format || '—'}\n`;
-    if (idea.whyItWorks) out += `   Why it works: ${idea.whyItWorks}\n`;
-    if (idea.prAngle) out += `   PR angle: ${idea.prAngle}\n`;
-    if (idea.trend) out += `   Trend it rides: ${idea.trend}\n`;
-    if (idea.brandFit) out += `   Brand fit: ${idea.brandFit}\n`;
-    if (idea.themeName) out += `   Cultural theme: ${idea.themeName}\n`;
-    out += `\n` + '-'.repeat(60) + '\n\n';
-  });
-  return out;
-}
-
-// Copy all
-document.addEventListener('click', async (e) => {
-  if (e.target.id === 'shortlist-copy') {
-    try {
-      await navigator.clipboard.writeText(buildExportText());
-      e.target.textContent = 'Copied ✓';
-      setTimeout(() => { e.target.textContent = 'Copy all'; }, 1800);
-    } catch (err) {
-      e.target.textContent = 'Copy failed';
-      setTimeout(() => { e.target.textContent = 'Copy all'; }, 1800);
-    }
-  }
-
-  // Download as text file
-  if (e.target.id === 'shortlist-download') {
-    const text = buildExportText();
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `idea-jacker-shortlist-${new Date().toISOString().slice(0, 10)}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  // Clear the whole shortlist
-  if (e.target.id === 'shortlist-clear') {
-    if (shortlist.length === 0) return;
-    if (!confirm(`Clear all ${shortlist.length} saved ideas? This can't be undone.`)) return;
-    shortlist = [];
-    persistShortlist();
-    updateShortlistCount();
-    renderShortlistItems();
-    // Un-star any visible cards
-    document.querySelectorAll('.idea-save-btn.active').forEach(btn => {
-      btn.classList.remove('active');
-      const star = btn.querySelector('.star-icon');
-      if (star) star.textContent = '☆';
-    });
-  }
-});
-
-// Close shortlist modal on Escape
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('#shortlist-modal').classList.contains('hidden')) {
-    $('#shortlist-modal').classList.add('hidden');
-  }
-});
-
-// ============================================================
-// "Develop this idea" — expands one idea into a working brief
-// ============================================================
-
-document.addEventListener('click', (e) => {
-  const devBtn = e.target.closest('.idea-develop-btn');
-  if (devBtn) {
-    const id = devBtn.dataset.ideaId;
-    // Look the idea up: first in the rendered cards, then in the shortlist
-    const idea = renderedIdeaData[id] || shortlist.find(i => i.id === id);
-    if (idea) developIdea(idea);
-    return;
-  }
-  if (e.target.id === 'develop-close' || e.target.id === 'develop-modal') {
-    $('#develop-modal').classList.add('hidden');
-    return;
-  }
-});
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('#develop-modal').classList.contains('hidden')) {
-    $('#develop-modal').classList.add('hidden');
-  }
-});
-
-async function developIdea(idea, rework) {
-  currentDevelopIdea = idea;
-
-  // A fresh develop (no rework) starts a new version history.
-  // A rework keeps the existing history and appends to it.
-  if (!rework) {
-    versionHistory = [];
-    versionIndex = -1;
-    pendingSteer = null;
-  } else {
-    pendingSteer = rework.steer && rework.steer.trim() ? rework.steer.trim() : null;
-  }
-
-  const modal = $('#develop-modal');
-  const body = $('#develop-body');
-  const titleEl = $('#develop-title');
-
-  // Find the active brand (if exactly one is selected, pass it for context)
-  const activeBrands = brands.filter(b => b.active);
-  const brand = activeBrands.length === 1 ? activeBrands[0] : null;
-
-  titleEl.textContent = rework ? 'Reworking…' : 'Developing…';
-  body.innerHTML = `
-    <div class="develop-loading">
-      <div class="develop-concept-echo">${escapeHtml(idea.concept || '')}</div>
-      <div class="stream-progress-bar"></div>
-      <div class="develop-loading-msg">${rework ? 'Taking a fresh angle…' : 'Working up the mechanics, assets, timeline, and risks…'}</div>
+  const sections = (b.sections || []).filter(s => s.items && s.items.length).map(s => {
+    const accent = BUCKET_ACCENT[s.key] || 'var(--teal-darker)';
+    return `
+    <div class="brief-section">
+      <div class="brief-section-title" style="color:${accent}"><span class="section-dot" style="background:${accent}"></span>${escapeHtml(s.title)}<span class="section-count">${s.items.length}</span></div>
+      ${s.items.map(it => `
+        <div class="brief-item" style="border-left-color:${accent}">
+          <div class="brief-item-head">${escapeHtml(it.event)}</div>
+          <div class="brief-item-date">${escapeHtml(it.date)}${it.daysOut ? ' · ' + escapeHtml(String(it.daysOut)) + ' days out' : ''} · ${escapeHtml(it.why)}</div>
+          ${(it.matches || []).map(m => `
+            <div class="idea-card">
+              <div class="idea-card-top">
+                <span class="idea-client">${escapeHtml(m.client)}</span>
+                ${m.idea ? `<span class="idea-name" style="color:${accent}">${escapeHtml(m.idea)}</span>` : ''}
+                <button class="copy-seed" data-seed="${escapeHtml(seedTextFor(it.event, m))}">Copy for Idea Jacker</button>
+              </div>
+              <div class="idea-concept">${escapeHtml(m.concept || m.angle || '')}</div>
+              ${m.headline ? `<div class="idea-headline">“${escapeHtml(m.headline)}”</div>` : ''}
+              <div class="idea-meta"><span style="color:${accent}">Media:</span> ${escapeHtml(m.media || m.format || '')} &nbsp;·&nbsp; <span style="color:${accent}">This week:</span> ${escapeHtml(m.action || m.leadNote || '')}</div>
+            </div>`).join('')}
+        </div>`).join('')}
     </div>`;
-  modal.classList.remove('hidden');
+  }).join('');
 
-  let fullText = '';
+  const alsoItems = (b.alsoNoted || []).map(x => typeof x === 'string'
+    ? `<div class="also-card"><span class="also-name">${escapeHtml(x)}</span></div>`
+    : `<div class="also-card">
+         <div><div class="also-name">${escapeHtml(x.event)}</div><div class="also-date">${escapeHtml(x.date || '')}</div></div>
+         <button class="also-ideate" data-name="${escapeHtml(x.event)}">Generate ideas</button>
+       </div>`);
+  const also = alsoItems.length
+    ? `<div class="also-block">
+         <div class="brief-section-title" style="color:var(--navy-muted)"><span class="section-dot" style="background:var(--navy-muted)"></span>Also on the calendar<span class="section-count">${alsoItems.length}</span></div>
+         <div class="also-grid">${alsoItems.join('')}</div>
+       </div>` : '';
+
+  $('#briefing-view').innerHTML = `
+    <div class="brief-hero">
+      <div class="brief-eyebrow">Forward Planner briefing</div>
+      <div class="brief-subject">${escapeHtml(b.subject)}</div>
+      <div class="brief-chips">${chips.map(c => '<span class="brief-chip">' + escapeHtml(c) + '</span>').join('')}</div>
+      ${b.thinWarning ? '<div class="brief-thin">' + escapeHtml(b.thinWarning) + '</div>' : ''}
+      <p class="brief-intro">${escapeHtml(b.intro)}</p>
+    </div>
+    ${sections}
+    ${also}`;
+}
+
+// Copy-for-Idea-Jacker buttons
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.copy-seed');
+  if (!btn) return;
+  navigator.clipboard.writeText(btn.dataset.seed).then(() => {
+    const was = btn.textContent;
+    btn.textContent = 'Copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = was; btn.classList.remove('copied'); }, 1800);
+  });
+});
+
+
+// ============ Ideate a single day (modal, callable from anywhere) ============
+document.addEventListener('click', async (e) => {
+  const cal = e.target.closest('[data-ideate-event]');
+  if (cal) {
+    const ev = events[+cal.dataset.ideateEvent];
+    if (ev) runIdeation(ev);
+    return;
+  }
+  const also = e.target.closest('.also-ideate');
+  if (also) {
+    const name = also.dataset.name;
+    const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const match = events.find(ev => norm(ev.event) === norm(name)) ||
+                  events.find(ev => norm(ev.event).includes(norm(name)) || norm(name).includes(norm(ev.event)));
+    runIdeation(match || { event: name });
+    return;
+  }
+  if (e.target.id === 'ideate-close' || e.target.id === 'ideate-modal') {
+    $('#ideate-modal').classList.add('hidden');
+  }
+});
+
+async function runIdeation(ev) {
+  const modal = $('#ideate-modal');
+  modal.classList.remove('hidden');
+  $('#ideate-title').textContent = ev.event;
+  const statusEl = $('#ideate-status');
+  statusEl.classList.remove('hidden');
+  statusEl.innerHTML = loaderHTML('Working up ideas') + '<div class="run-log"></div>';
+  $('#ideate-results').innerHTML = '';
+  const t0 = Date.now();
 
   try {
-    const response = await fetch('/api/develop-idea', {
+    const res = await fetch('/api/ideate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-password': PASSWORD },
-      body: JSON.stringify({ idea, brand, rework })
+      body: JSON.stringify({ event: ev })
     });
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Server returned ${response.status}: ${errText.slice(0, 200)}`);
-    }
-
-    const reader = response.body.getReader();
+    if (!res.ok || !res.body) throw new Error('The ideation engine did not start (' + res.status + ').');
+    const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -970,340 +685,31 @@ async function developIdea(idea, rework) {
       buffer = lines.pop();
       for (const line of lines) {
         if (!line.trim()) continue;
-        try {
-          const msg = JSON.parse(line);
-          handleDevelopMessage(msg, idea);
-        } catch (err) { /* partial line, ignore */ }
+        let msg;
+        try { msg = JSON.parse(line); } catch (err) { continue; }
+        if (msg.type === 'status') statusEl.querySelector('.run-log').innerHTML += '<div>' + escapeHtml(msg.message) + '</div>';
+        else if (msg.type === 'tick') {
+          const el = statusEl.querySelector('.loader-elapsed');
+          if (el) el.textContent = 'Still writing, ' + Math.round((Date.now() - t0) / 1000) + 's in. Good ideas take a moment';
+        }
+        else if (msg.type === 'error') statusEl.querySelector('.run-log').innerHTML += '<div class="err">' + escapeHtml(msg.message) + '</div>';
+        else if (msg.type === 'done') {
+          statusEl.classList.add('hidden');
+          $('#ideate-results').innerHTML = (msg.ideas || []).map(m => `
+            <div class="idea-card">
+              <div class="idea-card-top">
+                <span class="idea-client">${escapeHtml(m.client)}</span>
+                ${m.idea ? `<span class="idea-name" style="color:var(--teal-darker)">${escapeHtml(m.idea)}</span>` : ''}
+                <button class="copy-seed" data-seed="${escapeHtml(seedTextFor(ev.event, m))}">Copy for Idea Jacker</button>
+              </div>
+              <div class="idea-concept">${escapeHtml(m.concept || '')}</div>
+              ${m.headline ? `<div class="idea-headline">\u201C${escapeHtml(m.headline)}\u201D</div>` : ''}
+              <div class="idea-meta"><span style="color:var(--teal-darker)">Media:</span> ${escapeHtml(m.media || '')} &nbsp;·&nbsp; <span style="color:var(--teal-darker)">This week:</span> ${escapeHtml(m.action || '')}</div>
+            </div>`).join('') || '<p class="empty-note">No strong matches for this one.</p>';
+        }
       }
     }
   } catch (err) {
-    body.innerHTML = `<div class="error-block"><h3>Couldn't develop this idea</h3><p>${escapeHtml(err.message)}</p></div>`;
+    statusEl.querySelector('.run-log').innerHTML += '<div class="err">' + escapeHtml(err.message) + '</div>';
   }
-
-  function handleDevelopMessage(msg, idea) {
-    if (msg.type === 'delta') {
-      fullText += msg.text;
-      // Try to render progressively as the brief takes shape
-      const partial = parsePartialJson(fullText);
-      if (partial && partial.title) {
-        renderBrief(partial, idea, false);
-      }
-    } else if (msg.type === 'done') {
-      // Prefer the server's parsed brief; if that failed, fall back to our own
-      // tolerant parse of the accumulated text so the complete view still renders.
-      let finalBrief = msg.brief;
-      if (!finalBrief) {
-        finalBrief = parsePartialJson(fullText);
-      }
-      if (finalBrief && finalBrief.title) {
-        renderBrief(finalBrief, idea, true);
-      } else {
-        body.innerHTML = `<div class="error-block">
-          <h3>Couldn't parse the developed brief</h3>
-          <p>Here's the raw text — you can still copy what's useful.</p>
-          <pre>${escapeHtml(msg.rawText || fullText || '')}</pre>
-        </div>`;
-      }
-    } else if (msg.type === 'error') {
-      body.innerHTML = `<div class="error-block"><h3>Server error</h3><p>${escapeHtml(msg.message)}</p></div>`;
-    }
-  }
-
-  function renderBrief(brief, idea, complete) {
-    // While streaming (not complete), just show the partial brief with no chrome
-    if (!complete) {
-      titleEl.textContent = brief.title || 'Developing…';
-      body.innerHTML = briefSectionsHtml(brief);
-      return;
-    }
-
-    // On complete, record this version into history and render with navigator
-    const version = {
-      brief,
-      text: buildBriefText(brief, idea),
-      steer: pendingSteer || null
-    };
-    pendingSteer = null;
-
-    // If we're viewing an older version and generate a new one, drop the "redo" tail
-    if (versionIndex < versionHistory.length - 1) {
-      versionHistory = versionHistory.slice(0, versionIndex + 1);
-    }
-    versionHistory.push(version);
-    versionIndex = versionHistory.length - 1;
-
-    showVersion(versionIndex, idea);
-  }
-
-  // Render a specific version from history (used by complete + the nav arrows)
-  function showVersion(idx, idea) {
-    versionIndex = idx;
-    const version = versionHistory[idx];
-    const brief = version.brief;
-    titleEl.textContent = brief.title || 'Developed brief';
-
-    const total = versionHistory.length;
-    const navHtml = total > 1 ? `
-      <div class="version-nav">
-        <button type="button" class="version-arrow" id="version-prev" ${idx === 0 ? 'disabled' : ''} title="Previous version">‹</button>
-        <span class="version-label">Version ${idx + 1} of ${total}${version.steer ? ` · "${escapeHtml(version.steer)}"` : ''}</span>
-        <button type="button" class="version-arrow" id="version-next" ${idx === total - 1 ? 'disabled' : ''} title="Next version">›</button>
-      </div>` : '';
-
-    body.innerHTML = `
-      ${navHtml}
-      ${briefSectionsHtml(brief)}
-      <div class="develop-actions">
-        <button type="button" id="develop-copy" class="secondary-btn">Copy brief</button>
-      </div>
-      <div class="rework-box">
-        <div class="rework-label">Want a different take? Tell it what to change.</div>
-        <textarea id="rework-steer" class="rework-steer" rows="2" placeholder="e.g. 'make it cheaper', 'lean into the humour', 'what if it were a stunt not a study?' — or leave blank for a fresh angle."></textarea>
-        <button type="button" id="rework-btn" class="secondary-btn rework-btn">↻ Rework</button>
-      </div>
-    `;
-
-    // Keep the copy button + rework wired to THIS version
-    lastDevelopedBriefText = version.text;
-    lastDevelopedTitle = brief.title || '';
-  }
-
-  // Expose showVersion to the outer handlers via the shared refs
-  developViewRefs = { showVersion, idea };
-
-  function briefSectionsHtml(brief) {
-    const list = (arr) => (arr || []).map(item => `<li>${escapeHtml(item)}</li>`).join('');
-    return `
-      ${brief.summary ? `<p class="develop-summary">${escapeHtml(brief.summary)}</p>` : ''}
-      ${brief.mechanics ? `<div class="develop-section">
-        <h4>How it works</h4>
-        <ol class="develop-list">${list(brief.mechanics)}</ol>
-      </div>` : ''}
-      ${brief.assets ? `<div class="develop-section">
-        <h4>What you'd need</h4>
-        <ul class="develop-list">${list(brief.assets)}</ul>
-      </div>` : ''}
-      ${brief.timeline ? `<div class="develop-section">
-        <h4>Timeline</h4>
-        <p>${escapeHtml(brief.timeline)}</p>
-      </div>` : ''}
-      ${brief.earnedAngle ? `<div class="develop-section">
-        <h4>How it earns coverage</h4>
-        <p>${escapeHtml(brief.earnedAngle)}</p>
-      </div>` : ''}
-      ${brief.samplePitch ? `<div class="develop-section develop-pitch">
-        <h4>Sample pitch</h4>
-        <p>${escapeHtml(brief.samplePitch)}</p>
-      </div>` : ''}
-      ${brief.risks ? `<div class="develop-section">
-        <h4>Risks & considerations</h4>
-        <ul class="develop-list">${list(brief.risks)}</ul>
-      </div>` : ''}
-      ${brief.budgetNote ? `<div class="develop-section">
-        <h4>Budget note</h4>
-        <p>${escapeHtml(brief.budgetNote)}</p>
-      </div>` : ''}
-    `;
-  }
-}
-
-// Context for develop + rework + version history
-let lastDevelopedBriefText = '';
-let lastDevelopedTitle = '';
-let currentDevelopIdea = null;
-let versionHistory = [];      // completed briefs for the current idea
-let versionIndex = -1;        // which version is on screen
-let pendingSteer = null;      // steer text used for the in-flight rework
-let developViewRefs = null;   // { showVersion, idea } for the current modal
-
-function buildBriefText(brief, idea) {
-  let out = `${brief.title || 'DEVELOPED BRIEF'}\n${'='.repeat(50)}\n\n`;
-  if (idea && idea.concept) out += `Original concept: ${idea.concept}\n\n`;
-  if (brief.summary) out += `${brief.summary}\n\n`;
-  if (brief.mechanics) out += `HOW IT WORKS\n${brief.mechanics.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\n`;
-  if (brief.assets) out += `WHAT YOU'D NEED\n${brief.assets.map(a => `- ${a}`).join('\n')}\n\n`;
-  if (brief.timeline) out += `TIMELINE\n${brief.timeline}\n\n`;
-  if (brief.earnedAngle) out += `HOW IT EARNS COVERAGE\n${brief.earnedAngle}\n\n`;
-  if (brief.samplePitch) out += `SAMPLE PITCH\n${brief.samplePitch}\n\n`;
-  if (brief.risks) out += `RISKS & CONSIDERATIONS\n${brief.risks.map(r => `- ${r}`).join('\n')}\n\n`;
-  if (brief.budgetNote) out += `BUDGET NOTE\n${brief.budgetNote}\n`;
-  return out;
-}
-
-// Copy the developed brief, rework, and version navigation
-document.addEventListener('click', async (e) => {
-  if (e.target.id === 'develop-copy') {
-    try {
-      await navigator.clipboard.writeText(lastDevelopedBriefText);
-      e.target.textContent = 'Copied ✓';
-      setTimeout(() => { e.target.textContent = 'Copy brief'; }, 1800);
-    } catch (err) {
-      e.target.textContent = 'Copy failed';
-      setTimeout(() => { e.target.textContent = 'Copy brief'; }, 1800);
-    }
-    return;
-  }
-
-  // Rework the current idea — with optional steer
-  if (e.target.id === 'rework-btn') {
-    if (!currentDevelopIdea) return;
-    const steerEl = $('#rework-steer');
-    const steer = steerEl ? steerEl.value : '';
-    developIdea(currentDevelopIdea, {
-      steer,
-      previousTitle: lastDevelopedTitle
-    });
-    return;
-  }
-
-  // Version navigation — undo (prev) / redo (next)
-  if (e.target.id === 'version-prev') {
-    if (developViewRefs && versionIndex > 0) {
-      developViewRefs.showVersion(versionIndex - 1, developViewRefs.idea);
-    }
-    return;
-  }
-  if (e.target.id === 'version-next') {
-    if (developViewRefs && versionIndex < versionHistory.length - 1) {
-      developViewRefs.showVersion(versionIndex + 1, developViewRefs.idea);
-    }
-    return;
-  }
-});
-
-// ============================================================
-// Rendering helpers
-// ============================================================
-
-// Lookup of headline id -> { title, url, source } for the current run,
-// used to turn theme evidence citations into clickable links.
-let currentSourcesMap = {};
-
-function renderEvidenceItem(e) {
-  // Evidence may be a numeric id (new format) or a plain string (fallback).
-  const entry = currentSourcesMap[e];
-  if (entry && entry.title) {
-    const label = `${escapeHtml(entry.title)} <span class="evidence-source">— ${escapeHtml(entry.source || '')}</span>`;
-    if (entry.url) {
-      return `<li><a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener" class="evidence-link">${label}</a></li>`;
-    }
-    return `<li>${label}</li>`;
-  }
-  // Fallback: if it's not a known id, just show whatever we got as text
-  return `<li>${escapeHtml(typeof e === 'string' ? e : '')}</li>`;
-}
-
-function renderThemeShell(theme, idx) {
-  const lensClass = lensClassFor(theme.lens);
-  const evidenceItems = (theme.evidence || []).filter(e => e !== null && e !== undefined && e !== '');
-  const evidence = evidenceItems.map(renderEvidenceItem).join('');
-  return `
-    <div class="theme-meta">
-      <span class="lens-chip ${lensClass}">${escapeHtml(theme.lens || '')}</span>
-      <span class="theme-counter">Theme ${idx + 1}</span>
-    </div>
-    <h2 class="theme-name">${escapeHtml(theme.name || '')}</h2>
-    <p class="theme-summary">${escapeHtml(theme.summary || '')}</p>
-    ${evidence ? `<details class="theme-evidence">
-      <summary>Evidence from the news (${evidenceItems.length})</summary>
-      <ul>${evidence}</ul>
-    </details>` : ''}
-    <div class="ideas-grid"></div>
-  `;
-}
-
-function renderIdeaBody(idea, theme) {
-  const id = ideaId(idea);
-  // Stash the full idea (plus theme context) so the save button can retrieve it
-  renderedIdeaData[id] = {
-    concept: idea.concept || '',
-    headline: idea.headline || '',
-    budgetTier: idea.budgetTier || '',
-    format: idea.format || '',
-    whyItWorks: idea.whyItWorks || '',
-    prAngle: idea.prAngle || '',
-    trend: idea.trend || '',
-    brandFit: idea.brandFit || '',
-    themeName: theme ? (theme.name || '') : '',
-    lens: theme ? (theme.lens || '') : ''
-  };
-  const saved = isShortlisted(id);
-  const tierClass = budgetTierClass(idea.budgetTier);
-  return `
-    <div class="idea-chip-row">
-      <span class="budget-chip ${tierClass}">${escapeHtml(idea.budgetTier || 'Unspecified')}</span>
-      <span class="format-chip">${escapeHtml(idea.format || '')}</span>
-      <button class="idea-save-btn${saved ? ' active' : ''}" data-idea-id="${id}" title="Save to shortlist" aria-label="Save to shortlist">
-        <span class="star-icon">${saved ? '★' : '☆'}</span>
-      </button>
-    </div>
-    <div class="idea-concept">${escapeHtml(idea.concept || '')}</div>
-    <div class="idea-headline-block">
-      <div class="idea-headline">"${escapeHtml(idea.headline || '')}"</div>
-      <div class="idea-headline-label">Headline a journalist might write</div>
-    </div>
-    <div class="idea-field">
-      <div class="idea-label">Why it works</div>
-      <div class="idea-value">${escapeHtml(idea.whyItWorks || '')}</div>
-    </div>
-    <div class="idea-field">
-      <div class="idea-label">PR angle</div>
-      <div class="idea-value">${escapeHtml(idea.prAngle || '')}</div>
-    </div>
-    <div class="idea-field">
-      <div class="idea-label">Trend it rides</div>
-      <div class="idea-value">${escapeHtml(idea.trend || '')}</div>
-    </div>
-    <div class="idea-field">
-      <div class="idea-label">Brand fit</div>
-      <div class="idea-value">${escapeHtml(idea.brandFit || '')}</div>
-    </div>
-    <button class="idea-develop-btn" data-idea-id="${id}">Develop this idea →</button>
-  `;
-}
-
-function budgetTierClass(tier) {
-  if (!tier) return 'tier-default';
-  const t = tier.toLowerCase();
-  if (t.includes('reactive')) return 'tier-reactive';
-  if (t.includes('low')) return 'tier-low';
-  if (t.includes('mid')) return 'tier-mid';
-  if (t.includes('big') || t.includes('swing')) return 'tier-big';
-  return 'tier-default';
-}
-
-function lensClassFor(lens) {
-  if (!lens) return '';
-  const l = lens.toLowerCase();
-  if (l.includes('gen')) return 'lens-gen';
-  if (l.includes('life')) return 'lens-life';
-  if (l.includes('controvers')) return 'lens-controversy';
-  if (l.includes('tech')) return 'lens-tech';
-  return '';
-}
-
-function escapeHtml(str) {
-  if (str == null) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-// ============================================================
-// Auto-unlock — runs last, after all state above is loaded.
-// Accepts the key passed from the Creative Suite homepage and
-// honours an unlock from earlier in this browser session.
-// ============================================================
-const suiteKey = new URLSearchParams(location.search).get('k');
-if (suiteKey === PASSWORD) {
-  sessionStorage.setItem('unlocked', 'yes');
-  history.replaceState(null, '', location.pathname);
-}
-if (sessionStorage.getItem('unlocked') === 'yes') {
-  $('#password-gate').classList.add('hidden');
-  $('#app').classList.remove('hidden');
-  initApp();
 }
