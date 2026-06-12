@@ -3,7 +3,7 @@
 // this page reads and writes it through /api/data and runs the engine
 // through /api/run, which streams progress lines as it works.
 
-const FP_VERSION = 'v12';
+const FP_VERSION = 'v13';
 const PASSWORD = 'PicPR2026';
 const $ = (sel) => document.querySelector(sel);
 
@@ -134,9 +134,16 @@ $('#tabs').addEventListener('click', (e) => {
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + tab.dataset.tab));
 });
 
+// Links from the other suite tools can deep-link a tab, e.g. /#clients
+const wantedTab = location.hash.replace('#', '');
+if (wantedTab) {
+  const tabBtn = document.querySelector('[data-tab="' + wantedTab + '"]');
+  if (tabBtn) setTimeout(() => tabBtn.click(), 0);
+}
+
 // ============ Data plumbing ============
 async function loadStore(name) {
-  const res = await fetch('/api/data?store=' + name);
+  const res = await fetch('/api/data?store=' + name, { headers: { 'x-password': PASSWORD } });
   if (!res.ok) throw new Error('Could not load ' + name);
   return res.json();
 }
@@ -286,6 +293,10 @@ function clientFormHTML(c = {}, index = -1) {
       <div class="full"><label class="form-label">Topics (keywords for matching)</label><textarea id="cf-topics" rows="2">${escapeHtml(c.topics || '')}</textarea></div>
       <div><label class="form-label">Tone of voice</label><input type="text" id="cf-tone" value="${escapeHtml(c.tone || '')}"></div>
       <div><label class="form-label">Topics to avoid</label><input type="text" id="cf-avoid" value="${escapeHtml(c.avoid || '')}"></div>
+      <div><label class="form-label">Location</label><input type="text" id="cf-location" value="${escapeHtml(c.location || '')}"></div>
+      <div><label class="form-label">Website</label><input type="text" id="cf-website" value="${escapeHtml(c.website || '')}"></div>
+      <div><label class="form-label">Typical budget</label><input type="text" id="cf-budget" value="${escapeHtml(c.budget || '')}"></div>
+      <div class="full"><label class="form-label">Current briefing (what they're pitching right now — feeds all three tools)</label><textarea id="cf-briefing" rows="2">${escapeHtml(c.briefing || '')}</textarea></div>
     </div>
     <div class="form-buttons">
       <label class="check-inline"><input type="checkbox" id="cf-prospect" ${c.prospect ? 'checked' : ''}> New business prospect</label>
@@ -330,6 +341,29 @@ document.addEventListener('click', async (e) => {
   }
 
   if (t.id === 'add-client-btn') { $('#client-form').innerHTML = clientFormHTML(); $('#client-form').classList.remove('hidden'); }
+  if (t.id === 'sync-roster-btn') {
+    t.disabled = true; t.textContent = 'Syncing…';
+    try {
+      const res = await fetch('/api/data?store=master-roster', { headers: { 'x-password': PASSWORD } });
+      if (!res.ok) throw new Error('Could not load the master list');
+      const master = await res.json();
+      const norm = (n) => (n || '').trim().toLowerCase().replace(/[\u2013\u2014-]/g, '-').replace(/\s*-\s*/g, ' - ').replace(/\s+/g, ' ');
+      const have = new Set(clients.map(c => norm(c.name)));
+      const added = [];
+      for (const m of master) {
+        if (!have.has(norm(m.name))) { clients.push(m); added.push(m.name); }
+      }
+      if (added.length) {
+        await persist('clients', clients, renderClients);
+        alert('Added ' + added.length + ' client(s) from the master list:\n' + added.join('\n'));
+      } else {
+        alert('Roster already matches the master list — nothing to add.');
+      }
+    } catch (err) {
+      alert('Sync failed: ' + err.message);
+    }
+    t.disabled = false; t.textContent = 'Sync master list';
+  }
   if (t.dataset.editClient !== undefined) { const i = +t.dataset.editClient; $('#client-form').innerHTML = clientFormHTML(clients[i], i); $('#client-form').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   if (t.dataset.delClient !== undefined) {
     const i = +t.dataset.delClient;
@@ -341,12 +375,17 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.saveClient !== undefined) {
     const i = +t.dataset.saveClient;
     const c = {
+      ...(i === -1 ? {} : clients[i]),
       name: $('#cf-name').value.trim(),
       industry: $('#cf-industry').value.trim(),
       description: $('#cf-description').value.trim(),
       topics: $('#cf-topics').value.trim(),
       tone: $('#cf-tone').value.trim(),
       avoid: $('#cf-avoid').value.trim(),
+      location: $('#cf-location').value.trim(),
+      website: $('#cf-website').value.trim(),
+      budget: $('#cf-budget').value.trim(),
+      briefing: $('#cf-briefing').value.trim(),
       prospect: $('#cf-prospect').checked,
       active: $('#cf-active').checked
     };
@@ -360,7 +399,7 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.cancelForm === 'client') $('#client-form').classList.add('hidden');
 
   if (t.dataset.openBriefing) {
-    const res = await fetch('/api/data?store=briefing&id=' + encodeURIComponent(t.dataset.openBriefing));
+    const res = await fetch('/api/data?store=briefing&id=' + encodeURIComponent(t.dataset.openBriefing), { headers: { 'x-password': PASSWORD } });
     if (res.ok) {
       renderBriefing(await res.json());
       document.querySelector('[data-tab="briefing"]').click();
@@ -430,7 +469,7 @@ document.addEventListener('click', (e) => {
   if (item && !e.target.dataset.openBriefing) {
     const id = item.dataset.openBriefing;
     if (id) {
-      fetch('/api/data?store=briefing&id=' + encodeURIComponent(id))
+      fetch('/api/data?store=briefing&id=' + encodeURIComponent(id), { headers: { 'x-password': PASSWORD } })
         .then(r => r.ok ? r.json() : null)
         .then(b => { if (b) { renderBriefing(b); document.querySelector('[data-tab="briefing"]').click(); } });
     }
