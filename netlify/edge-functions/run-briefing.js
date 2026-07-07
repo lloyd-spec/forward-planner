@@ -11,8 +11,9 @@
 
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.39.0";
 import { getEvents, getClients, getSettings, saveBriefing } from "./lib/storage.js";
+import { generateWithFallback } from "./lib/providers.js";
 
-const PASSWORD = "PicPR2026";
+const PASSWORD = Netlify.env.get("SUITE_PASSWORD") || "PicPR2026";
 const COMPOSE_MODEL = "claude-opus-4-8";
 const SEARCH_MODEL = "claude-sonnet-4-6";
 
@@ -125,7 +126,7 @@ Only include events with a confirmed, specific date you found real evidence of. 
 
 const HOUSE_STYLE = `WRITING RULES (Pic PR house style, non-negotiable, applies to EVERY field of your output):
 - British English throughout (organise, programme, colour; UK idiom)
-- NEVER output an em dash (the long dash) in any field. Not between clauses, not as punctuation, not anywhere. Use a colon, a comma, a full stop or restructure. En dashes only for ranges like 6-8 weeks
+- NEVER output an em dash or an en dash in any field. Not between clauses, not as punctuation, not anywhere. When a dash is genuinely needed, use a hyphen with a space either side ( - ), sparingly. A colon, comma or full stop is usually better. Bare hyphens in ranges like 6-8 weeks are fine
 - No Oxford commas
 - Avoid power-of-three sentence structures (the "X, Y and Z" rhetorical rhythm)
 - Flowing, direct, confident prose. Vary sentence length. Specifics beat abstractions
@@ -231,9 +232,15 @@ function parseComposedJSON(raw) {
   throw new Error("could not repair");
 }
 
-// Belt and braces: no em dash from any source survives into the output.
+// Belt and braces: no em dash or en dash from any source survives into
+// the output. Em dashes become commas; en dashes between words become
+// spaced hyphens (digit-to-digit ranges like 6-8 keep a bare hyphen).
 function stripEmDashes(obj) {
-  if (typeof obj === "string") return obj.replace(/\s*\u2014\s*/g, ", ").replace(/\u2014/g, ", ").replace(/ ,/g, ",");
+  if (typeof obj === "string") return obj
+    .replace(/\s*\u2014\s*/g, ", ").replace(/\u2014/g, ", ")
+    .replace(/(\d)\s*\u2013\s*(\d)/g, "$1-$2")
+    .replace(/\s*\u2013\s*/g, " - ").replace(/\u2013/g, " - ")
+    .replace(/ ,/g, ",");
   if (Array.isArray(obj)) return obj.map(stripEmDashes);
   if (obj && typeof obj === "object") {
     const out = {};
@@ -387,29 +394,28 @@ export default async function handler(request) {
         }
 
         send({ type: "status", message: "Composing the briefing in house style..." });
-        const client = new Anthropic({ apiKey });
-        // Stream the composition and send a heartbeat every few seconds.
-        // A long silent await gets the connection cut by the infrastructure;
-        // a trickle of bytes keeps it alive however long the writing takes.
+        // Compose via the provider chain (Claude first, then ChatGPT and
+        // Gemini if their keys are set). A heartbeat trickles down every
+        // few seconds so the connection survives however long it takes.
         let text = "";
         let lastBeat = Date.now();
-        const apiStream = await client.messages.create({
-          model: COMPOSE_MODEL,
-          max_tokens: 16000,
-          stream: true,
-          messages: [{ role: "user", content: buildComposePrompt(windowEvents, fresh, clients, focusNames ? clients.map(c => c.name) : null) }]
-        });
-        let stopReason = "";
-        for await (const ev of apiStream) {
-          if (ev.type === "message_delta" && ev.delta && ev.delta.stop_reason) stopReason = ev.delta.stop_reason;
-          if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "text_delta") {
-            text += ev.delta.text;
+        const composeResult = await generateWithFallback({
+          claudeModel: COMPOSE_MODEL,
+          maxTokens: 16000,
+          system: "",
+          user: buildComposePrompt(windowEvents, fresh, clients, focusNames ? clients.map(c => c.name) : null),
+          onDelta: (t) => {
+            text += t;
             if (Date.now() - lastBeat > 4000) {
               send({ type: "tick" });
               lastBeat = Date.now();
             }
-          }
-        }
+          },
+          onStatus: (m) => send({ type: "status", message: m })
+        });
+        text = composeResult.text;
+        if (composeResult.provider !== "Claude") send({ type: "status", message: "Composed by " + composeResult.provider + " (fallback)." });
+        const stopReason = "";
         let composed;
         try {
           composed = parseComposedJSON(text);

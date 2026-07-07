@@ -12,13 +12,16 @@ import {
 } from "./lib/storage.js";
 import { SEED_CLIENTS } from "./lib/seed-data.js";
 
-const PASSWORD = "PicPR2026";
+// The suite password lives in an environment variable so it can be
+// rotated in one place. The literal is a transition fallback only.
+const PASSWORD = Netlify.env.get("SUITE_PASSWORD") || "PicPR2026";
 
 // The other desks in the Creative Suite, allowed to read the roster
 const ALLOWED_ORIGINS = [
   "https://pic-pr-newsjacker.netlify.app",
   "https://ideajacker.netlify.app",
-  "https://pic-pr-creative-suite.netlify.app"
+  "https://pic-pr-creative-suite.netlify.app",
+  "https://pic-pr-roots.netlify.app"
 ];
 
 function corsHeaders(request) {
@@ -51,6 +54,7 @@ export default async function handler(request) {
     if (request.headers.get("x-password") !== PASSWORD) {
       return json({ error: "Wrong password" }, 401);
     }
+    if (which === "verify")   return json({ ok: true });
     if (which === "events")   return json(await getEvents());
     if (which === "clients")  return json(await getClients());
     if (which === "settings") return json(await getSettings());

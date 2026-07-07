@@ -3,8 +3,11 @@
 // this page reads and writes it through /api/data and runs the engine
 // through /api/run, which streams progress lines as it works.
 
-const FP_VERSION = 'v13';
-const PASSWORD = 'PicPR2026';
+const FP_VERSION = 'v14';
+// The password never lives in this file. What you type (or what arrives
+// from the suite homepage via #k=) is held for the session and checked
+// server-side against /api/data?store=verify.
+let suiteKey = sessionStorage.getItem('suite_key') || '';
 const $ = (sel) => document.querySelector(sel);
 
 // Any script error becomes a visible banner instead of a silent death.
@@ -105,26 +108,43 @@ function escapeHtml(s) {
 }
 
 // ============ Gate ============
-function tryUnlock() {
-  if ($('#gate-input').value === PASSWORD) {
-    sessionStorage.setItem('fp_unlocked', '1');
+async function tryUnlock() {
+  const v = $('#gate-input').value;
+  if (!v) return;
+  const btn = $('#gate-submit');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/data?store=verify', { headers: { 'x-password': v } });
+    if (res.status === 401) {
+      $('#gate-error').textContent = 'Not quite. Try again.';
+      $('#gate-input').value = '';
+      return;
+    }
+    suiteKey = v;
+    sessionStorage.setItem('suite_key', v);
     $('#gate').classList.add('hidden');
     init();
-  } else {
-    $('#gate-error').textContent = 'Not quite. Try again.';
-    $('#gate-input').value = '';
+  } catch (e) {
+    // Server unreachable: unlock optimistically, the first load will verify
+    suiteKey = v;
+    sessionStorage.setItem('suite_key', v);
+    $('#gate').classList.add('hidden');
+    init();
+  } finally {
+    btn.disabled = false;
   }
 }
 $('#gate-submit').addEventListener('click', tryUnlock);
 $('#gate-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
-// Accept the key passed in links from the Creative Suite homepage,
-// so one unlock there opens this tool too
-const suiteKey = new URLSearchParams(location.search).get('k');
-if (suiteKey === PASSWORD) {
-  sessionStorage.setItem('fp_unlocked', '1');
-  history.replaceState(null, '', location.pathname);
+// Accept the key passed in links from the Creative Suite homepage
+// (#k= preferred, legacy ?k= still honoured), so one unlock opens all
+const urlKeyMatch = location.hash.match(/k=([^&]+)/) || location.search.match(/[?&]k=([^&]+)/);
+if (urlKeyMatch) {
+  suiteKey = decodeURIComponent(urlKeyMatch[1]);
+  sessionStorage.setItem('suite_key', suiteKey);
+  history.replaceState(null, '', location.pathname + location.hash.replace(/k=[^&]+&?/, '').replace(/#$/, ''));
 }
-if (sessionStorage.getItem('fp_unlocked') === '1') { $('#gate').classList.add('hidden'); init(); }
+if (suiteKey) { $('#gate').classList.add('hidden'); init(); }
 
 // ============ Tabs ============
 $('#tabs').addEventListener('click', (e) => {
@@ -135,7 +155,8 @@ $('#tabs').addEventListener('click', (e) => {
 });
 
 // Links from the other suite tools can deep-link a tab, e.g. /#clients
-const wantedTab = location.hash.replace('#', '');
+const hashTabMatch = location.hash.match(/tab=([a-z-]+)/);
+const wantedTab = hashTabMatch ? hashTabMatch[1] : location.hash.replace('#', '');
 if (wantedTab) {
   const tabBtn = document.querySelector('[data-tab="' + wantedTab + '"]');
   if (tabBtn) setTimeout(() => tabBtn.click(), 0);
@@ -143,7 +164,7 @@ if (wantedTab) {
 
 // ============ Data plumbing ============
 async function loadStore(name) {
-  const res = await fetch('/api/data?store=' + name, { headers: { 'x-password': PASSWORD } });
+  const res = await fetch('/api/data?store=' + name, { headers: { 'x-password': suiteKey } });
   if (!res.ok) throw new Error('Could not load ' + name);
   return res.json();
 }
@@ -151,7 +172,7 @@ async function loadStore(name) {
 async function saveStore(name, value) {
   const res = await fetch('/api/data?store=' + name, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'x-password': PASSWORD },
+    headers: { 'Content-Type': 'application/json', 'x-password': suiteKey },
     body: JSON.stringify(value)
   });
   const data = await res.json().catch(() => ({}));
@@ -344,7 +365,7 @@ document.addEventListener('click', async (e) => {
   if (t.id === 'sync-roster-btn') {
     t.disabled = true; t.textContent = 'Syncing…';
     try {
-      const res = await fetch('/api/data?store=master-roster', { headers: { 'x-password': PASSWORD } });
+      const res = await fetch('/api/data?store=master-roster', { headers: { 'x-password': suiteKey } });
       if (!res.ok) throw new Error('Could not load the master list');
       const master = await res.json();
       const norm = (n) => (n || '').trim().toLowerCase().replace(/[\u2013\u2014-]/g, '-').replace(/\s*-\s*/g, ' - ').replace(/\s+/g, ' ');
@@ -399,7 +420,7 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.cancelForm === 'client') $('#client-form').classList.add('hidden');
 
   if (t.dataset.openBriefing) {
-    const res = await fetch('/api/data?store=briefing&id=' + encodeURIComponent(t.dataset.openBriefing), { headers: { 'x-password': PASSWORD } });
+    const res = await fetch('/api/data?store=briefing&id=' + encodeURIComponent(t.dataset.openBriefing), { headers: { 'x-password': suiteKey } });
     if (res.ok) {
       renderBriefing(await res.json());
       document.querySelector('[data-tab="briefing"]').click();
@@ -469,7 +490,7 @@ document.addEventListener('click', (e) => {
   if (item && !e.target.dataset.openBriefing) {
     const id = item.dataset.openBriefing;
     if (id) {
-      fetch('/api/data?store=briefing&id=' + encodeURIComponent(id), { headers: { 'x-password': PASSWORD } })
+      fetch('/api/data?store=briefing&id=' + encodeURIComponent(id), { headers: { 'x-password': suiteKey } })
         .then(r => r.ok ? r.json() : null)
         .then(b => { if (b) { renderBriefing(b); document.querySelector('[data-tab="briefing"]').click(); } });
     }
@@ -515,7 +536,7 @@ async function startRun(clientNames) {
   try {
     const res = await fetch('/api/run', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-password': PASSWORD },
+      headers: { 'Content-Type': 'application/json', 'x-password': suiteKey },
       body: JSON.stringify({ emailMode: $('#email-mode').value, clients: clientNames || undefined })
     });
     if (!res.ok || !res.body) throw new Error('The engine did not start (' + res.status + ').');
@@ -670,7 +691,7 @@ async function runIdeation(ev) {
   try {
     const res = await fetch('/api/ideate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-password': PASSWORD },
+      headers: { 'Content-Type': 'application/json', 'x-password': suiteKey },
       body: JSON.stringify({ event: ev })
     });
     if (!res.ok || !res.body) throw new Error('The ideation engine did not start (' + res.status + ').');
