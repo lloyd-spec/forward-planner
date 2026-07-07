@@ -47,5 +47,5 @@
    gemini-2.5-pro).
 3. Trigger a redeploy after adding variables.
 4. **Check the Roots domain**: the Forward Planner's CORS list and the
-   homepage assume `https://pic-pr-roots.netlify.app`. If your live Roots
+   homepage assume `https://picpr-roots.netlify.app`. If your live Roots
    URL differs, tell Claude and we'll correct both in one line each.

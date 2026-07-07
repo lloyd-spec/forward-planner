@@ -21,7 +21,7 @@ const ALLOWED_ORIGINS = [
   "https://pic-pr-newsjacker.netlify.app",
   "https://ideajacker.netlify.app",
   "https://pic-pr-creative-suite.netlify.app",
-  "https://pic-pr-roots.netlify.app"
+  "https://picpr-roots.netlify.app"
 ];
 
 function corsHeaders(request) {
