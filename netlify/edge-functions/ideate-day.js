@@ -5,8 +5,8 @@
 import { generateWithFallback } from "./lib/providers.js";
 import { getClients } from "./lib/storage.js";
 
-const PASSWORD = Netlify.env.get("SUITE_PASSWORD") || "PicPR2026";
-const MODEL = "claude-opus-4-8";
+const PASSWORD = Netlify.env.get("SUITE_PASSWORD") || crypto.randomUUID() /* no SUITE_PASSWORD env var: gate fails closed - set it in Netlify */;
+const MODEL_TIER = "premium"; // resolved via CLAUDE_MODEL_PREMIUM env var in lib/providers.js
 
 const HOUSE_STYLE = `WRITING RULES (Pic PR house style, non-negotiable, applies to EVERY field):
 - British English throughout
@@ -99,7 +99,7 @@ export default async function handler(request) {
         let text = "";
         let lastBeat = Date.now();
         const result = await generateWithFallback({
-          claudeModel: MODEL,
+          tier: MODEL_TIER,
           maxTokens: 6000,
           system: "",
           user: buildPrompt(event, clients),

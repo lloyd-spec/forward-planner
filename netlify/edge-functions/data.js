@@ -14,7 +14,7 @@ import { SEED_CLIENTS } from "./lib/seed-data.js";
 
 // The suite password lives in an environment variable so it can be
 // rotated in one place. The literal is a transition fallback only.
-const PASSWORD = Netlify.env.get("SUITE_PASSWORD") || "PicPR2026";
+const PASSWORD = Netlify.env.get("SUITE_PASSWORD") || crypto.randomUUID() /* no SUITE_PASSWORD env var: gate fails closed - set it in Netlify */;
 
 // The other desks in the Creative Suite, allowed to read the roster
 const ALLOWED_ORIGINS = [

@@ -1,16 +1,32 @@
-// providers.js - shared AI provider fallback for the Pic PR Creative Suite.
-// Claude is the primary. If Claude is down, overloaded or erroring, the
-// call falls through to ChatGPT (OpenAI), then Gemini, so the tool keeps
-// working during an outage. These runners handle plain text generation -
-// the news itself arrives separately via RSS, so no web search is needed
-// for the fallbacks to stay faithful to the source material.
+// providers.js - shared AI provider layer for the Pic PR suites.
 //
-// Env vars (set in Netlify > Site configuration > Environment variables):
-//   ANTHROPIC_API_KEY   required - primary provider
-//   OPENAI_API_KEY      optional - first fallback (ChatGPT). Dormant until set.
-//   GEMINI_API_KEY      optional - second fallback. Dormant until set.
-//   OPENAI_MODEL        optional - default "gpt-5.1"
-//   GEMINI_MODEL        optional - default "gemini-2.5-pro"
+// WHAT THIS VERSION ADDS (July 2026 upgrade):
+//   1. MODEL TIERS set by environment variable, so upgrading the whole
+//      suite to a new model is a one-minute Netlify env change with no
+//      code edit and no redeploy of logic:
+//        CLAUDE_MODEL_FAST      default "claude-haiku-4-5"   - triage, classification, audits
+//        CLAUDE_MODEL_STANDARD  default "claude-sonnet-4-6"  - research, scans, drafts
+//        CLAUDE_MODEL_PREMIUM   default "claude-opus-4-8"    - client-facing creative
+//      Anthropic model IDs from the 4.6 generation on are pinned snapshots
+//      (no evergreen "latest" alias exists), so upgrades are deliberate:
+//      when a new model ships, test a few standard prompts against it,
+//      then change the env var. See UPGRADE-NOTES for the routine.
+//   2. HOUSE STYLE appended automatically to every system prompt from the
+//      shared house-style.js module - one place to edit the Pic voice.
+//   3. The same fallback chain as before: Claude primary, then ChatGPT,
+//      then Gemini, streaming preserved throughout.
+//
+// Env vars (Netlify > Site configuration > Environment variables):
+//   ANTHROPIC_API_KEY      required - primary provider
+//   OPENAI_API_KEY         optional - first fallback (ChatGPT). Dormant until set.
+//   GEMINI_API_KEY         optional - second fallback. Dormant until set.
+//   OPENAI_MODEL           optional - default "gpt-5.1"
+//   GEMINI_MODEL           optional - default "gemini-2.5-pro"
+//   CLAUDE_MODEL_FAST      optional - default "claude-haiku-4-5"
+//   CLAUDE_MODEL_STANDARD  optional - default "claude-sonnet-4-6"
+//   CLAUDE_MODEL_PREMIUM   optional - default "claude-opus-4-8"
+
+import { appendHouseStyle } from "./house-style.js";
 
 export function providerKeys() {
   return {
@@ -18,6 +34,13 @@ export function providerKeys() {
     openai: Netlify.env.get("OPENAI_API_KEY"),
     gemini: Netlify.env.get("GEMINI_API_KEY")
   };
+}
+
+// Model tiers - every tool asks for a tier, not a hardcoded ID.
+export function modelFor(tier) {
+  if (tier === "fast") return Netlify.env.get("CLAUDE_MODEL_FAST") || "claude-haiku-4-5";
+  if (tier === "premium") return Netlify.env.get("CLAUDE_MODEL_PREMIUM") || "claude-opus-4-8";
+  return Netlify.env.get("CLAUDE_MODEL_STANDARD") || "claude-sonnet-4-6";
 }
 
 // Normalise system prompts: Claude accepts a string or an array of blocks
@@ -28,11 +51,19 @@ function systemText(system) {
   return String(system || "");
 }
 
-// opts: { claudeModel, maxTokens, system, user, onDelta(text), onStatus(msg) }
+// opts: { tier, claudeModel, maxTokens, system, user, onDelta(text), onStatus(msg), noHouseStyle }
+//   tier         - "fast" | "standard" | "premium" (preferred)
+//   claudeModel  - explicit ID, overrides tier (kept for back-compat)
+//   noHouseStyle - set true only for machine-readable outputs (pure JSON etc.)
 // Streams text deltas through onDelta as they arrive. Returns
 // { text, provider }. Throws only if every configured provider fails.
 export async function generateWithFallback(opts) {
   const keys = providerKeys();
+  const system = opts.noHouseStyle ? opts.system : appendHouseStyle(opts.system);
+  const resolved = Object.assign({}, opts, {
+    system: system,
+    claudeModel: opts.claudeModel || modelFor(opts.tier)
+  });
   const chain = [
     { name: "Claude", key: keys.claude, run: runClaude },
     { name: "ChatGPT", key: keys.openai, run: runOpenAI },
@@ -44,14 +75,14 @@ export async function generateWithFallback(opts) {
   for (let i = 0; i < chain.length; i++) {
     const p = chain[i];
     try {
-      const text = await p.run(p.key, opts);
+      const text = await p.run(p.key, resolved);
       if (text && text.trim()) return { text: text, provider: p.name };
       lastError = new Error(p.name + " returned nothing");
     } catch (err) {
       lastError = err;
     }
     const next = chain[i + 1];
-    if (next && opts.onStatus) opts.onStatus(p.name + " unavailable - " + next.name + " stepping in...");
+    if (next && resolved.onStatus) resolved.onStatus(p.name + " unavailable - " + next.name + " stepping in...");
   }
   throw lastError || new Error("All providers failed");
 }
@@ -66,7 +97,7 @@ async function runClaude(apiKey, opts) {
       "anthropic-version": "2023-06-01"
     },
     body: JSON.stringify({
-      model: opts.claudeModel || "claude-opus-4-8",
+      model: opts.claudeModel,
       max_tokens: opts.maxTokens || 4000,
       stream: true,
       system: opts.system,
@@ -115,7 +146,6 @@ async function runOpenAI(apiKey, opts) {
       fullText += event.delta;
       if (opts.onDelta) opts.onDelta(event.delta);
     }
-    // Belt and braces: the completed event carries the full response
     if (event.type === "response.completed" && event.response && Array.isArray(event.response.output)) {
       for (const item of event.response.output) {
         if (item.type === "message" && Array.isArray(item.content)) {

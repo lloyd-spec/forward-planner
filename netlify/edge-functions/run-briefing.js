@@ -13,9 +13,9 @@ import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.39.0";
 import { getEvents, getClients, getSettings, saveBriefing } from "./lib/storage.js";
 import { generateWithFallback } from "./lib/providers.js";
 
-const PASSWORD = Netlify.env.get("SUITE_PASSWORD") || "PicPR2026";
-const COMPOSE_MODEL = "claude-opus-4-8";
-const SEARCH_MODEL = "claude-sonnet-4-6";
+const PASSWORD = Netlify.env.get("SUITE_PASSWORD") || crypto.randomUUID() /* no SUITE_PASSWORD env var: gate fails closed - set it in Netlify */;
+const COMPOSE_TIER = "premium"; // CLAUDE_MODEL_PREMIUM env var
+const SEARCH_MODEL = Netlify.env.get("CLAUDE_MODEL_STANDARD") || "claude-sonnet-4-6";
 
 // ---------- Date helpers ----------
 
@@ -400,7 +400,7 @@ export default async function handler(request) {
         let text = "";
         let lastBeat = Date.now();
         const composeResult = await generateWithFallback({
-          claudeModel: COMPOSE_MODEL,
+          tier: COMPOSE_TIER,
           maxTokens: 16000,
           system: "",
           user: buildComposePrompt(windowEvents, fresh, clients, focusNames ? clients.map(c => c.name) : null),

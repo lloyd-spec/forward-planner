@@ -1,6 +1,7 @@
 [build]
   publish = "."
   edge_functions = "netlify/edge-functions"
+  functions = "netlify/functions"
 
 # The data hatch — read/write events, clients, settings, archive
 [[edge_functions]]
@@ -16,3 +17,16 @@
 [[edge_functions]]
   path = "/api/ideate"
   function = "ideate-day"
+
+# The event scout - live calendar discovery with a human review queue
+[[edge_functions]]
+  path = "/api/scout"
+  function = "event-scout"
+
+# Monthly scout run (1st of the month, 06:00 UTC)
+[functions."scout-cron"]
+  schedule = "0 6 1 * *"
+
+# Native Monday-morning digest (replaces the external cron-job.org trigger)
+[functions."monday-digest"]
+  schedule = "0 7 * * 1"

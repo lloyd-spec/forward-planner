@@ -181,6 +181,7 @@ async function saveStore(name, value) {
 }
 
 async function init() {
+  loadScout();
   try {
     [events, clients, settings] = await Promise.all([
       loadStore('events'), loadStore('clients'), loadStore('settings')
@@ -733,4 +734,71 @@ async function runIdeation(ev) {
   } catch (err) {
     statusEl.querySelector('.run-log').innerHTML += '<div class="err">' + escapeHtml(err.message) + '</div>';
   }
+}
+
+
+// ---------- Event scout review queue ----------
+// Proposals the monthly live-search sweep found, each with the source page
+// that evidences its date. Approve to add to the calendar (source kept),
+// reject to bin it for good. The queue being empty is the happy state.
+
+async function loadScout() {
+  try {
+    const res = await fetch('/api/scout', { headers: { 'x-password': suiteKey } });
+    if (!res.ok) return;
+    const data = await res.json();
+    renderScout(data.proposals || []);
+  } catch (e) { /* scout unavailable: the calendar works as normal */ }
+}
+
+function renderScout(proposals) {
+  const el = document.getElementById('scout-queue');
+  if (!el) return;
+  if (!proposals.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="scout-bar"><span><strong>' + proposals.length +
+    '</strong> calendar update' + (proposals.length === 1 ? '' : 's') +
+    ' found by the event scout - each links its evidence. Approve to add, reject to bin.</span>' +
+    '<button onclick="runScout(this)">Run a fresh sweep</button></div>' +
+    proposals.map(p => (
+      '<div class="scout-card">' +
+        '<div><strong>' + escapeHtml(p.event) + '</strong> · ' + escapeHtml(p.date) +
+        ' <span class="chip">' + escapeHtml(p.category || '') + '</span>' +
+        '<div class="sc-meta">' + escapeHtml(p.description || '') +
+        (p.source ? ' <a href="' + escapeHtml(p.source) + '" target="_blank" rel="noopener">source</a>' : '') +
+        '</div></div>' +
+        '<div class="scout-actions">' +
+          '<button class="approve" onclick="scoutAct(\'' + p.id + '\', \'approve\')">Approve</button>' +
+          '<button onclick="scoutAct(\'' + p.id + '\', \'reject\')">Reject</button>' +
+        '</div>' +
+      '</div>'
+    )).join('');
+}
+
+async function scoutAct(id, action) {
+  await fetch('/api/scout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-password': suiteKey },
+    body: JSON.stringify({ action: action, id: id })
+  });
+  await loadScout();
+  if (action === 'approve') {
+    // refresh the calendar so the new event appears immediately
+    try {
+      const res = await fetch('/api/data?store=events', { headers: { 'x-password': suiteKey } });
+      if (res.ok) { events = await res.json(); renderEvents(); }
+    } catch (e) {}
+  }
+}
+
+async function runScout(btn) {
+  btn.disabled = true; btn.textContent = 'Sweeping...';
+  try {
+    await fetch('/api/scout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-password': suiteKey },
+      body: JSON.stringify({ action: 'run' })
+    });
+  } catch (e) {}
+  btn.disabled = false; btn.textContent = 'Run a fresh sweep';
+  loadScout();
 }
