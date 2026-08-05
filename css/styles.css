@@ -15,7 +15,7 @@
   --amber-bg: #fdf3dd;
   --amber-text: #8a5a00;
   --display: 'Fraunces', Georgia, serif;
-  --body: 'Inter', -apple-system, sans-serif;
+  --body: 'DM Sans', -apple-system, sans-serif;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }

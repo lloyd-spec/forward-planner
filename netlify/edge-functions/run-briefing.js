@@ -99,7 +99,7 @@ async function searchFreshEvents(apiKey, windowDays, knownEvents, clients) {
   const client = new Anthropic({ apiKey });
   const resp = await client.messages.create({
     model: SEARCH_MODEL,
-    max_tokens: 1500,
+    max_tokens: 4000,
     tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
     messages: [{
       role: "user",

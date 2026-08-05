@@ -45,6 +45,18 @@ export function modelFor(tier) {
 
 // Normalise system prompts: Claude accepts a string or an array of blocks
 // (for prompt caching); OpenAI and Gemini want plain text.
+// Wrap a system prompt so Anthropic caches it between calls.
+function cacheableSystem(system) {
+  if (Array.isArray(system)) {
+    const blocks = system.map((b) => Object.assign({}, b));
+    if (blocks.length) blocks[blocks.length - 1].cache_control = { type: "ephemeral" };
+    return blocks;
+  }
+  const text = String(system || "");
+  if (!text) return "";
+  return [{ type: "text", text: text, cache_control: { type: "ephemeral" } }];
+}
+
 function systemText(system) {
   if (typeof system === "string") return system;
   if (Array.isArray(system)) return system.map((b) => b.text || "").join("\n");
@@ -100,7 +112,10 @@ async function runClaude(apiKey, opts) {
       model: opts.claudeModel,
       max_tokens: opts.maxTokens || 4000,
       stream: true,
-      system: opts.system,
+      // The house style block is identical on every call, so mark the
+      // system prompt cacheable: repeats within the cache window pay a
+      // tenth of the input price for it.
+      system: cacheableSystem(opts.system),
       messages: [{ role: "user", content: opts.user }]
     })
   });
@@ -109,12 +124,23 @@ async function runClaude(apiKey, opts) {
     throw new Error("Claude API " + res.status + ": " + errText.slice(0, 200));
   }
   let fullText = "";
+  let truncated = false;
   await readSSE(res, (event) => {
     if (event.type === "content_block_delta" && event.delta && event.delta.type === "text_delta" && event.delta.text) {
       fullText += event.delta.text;
       if (opts.onDelta) opts.onDelta(event.delta.text);
     }
+    // A response that hits max_tokens is incomplete. Saying so beats
+    // handing back a half-finished draft that looks finished.
+    if (event.type === "message_delta" && event.delta && event.delta.stop_reason === "max_tokens") {
+      truncated = true;
+    }
   });
+  if (truncated) {
+    const note = "\n\n[TRUNCATED: this response hit its length limit and is incomplete. Raise maxTokens for this function if it keeps happening.]";
+    fullText += note;
+    if (opts.onDelta) opts.onDelta(note);
+  }
   return fullText;
 }
 

@@ -57,3 +57,39 @@ export function profileToPromptBlock(c) {
   if (!bits.length) return "";
   return "CLIENT PROFILE (from the Pic PR client registry):\n" + bits.join("\n");
 }
+
+
+// fetchClientContext(name, want) - asks the cross-suite context API for the
+// latest saved work on a client (competitor snapshot, strategy document,
+// recent coverage), condensed to prompt-ready text. Derives its URL from
+// CLIENTS_API_URL, so no extra configuration. Same fail-silent contract as
+// the registry: unreachable or unconfigured means null, never an error.
+export async function fetchClientContext(name, want) {
+  const url = Netlify.env.get("CLIENTS_API_URL");
+  const key = Netlify.env.get("CLIENTS_API_KEY");
+  if (!url || !key || !name) return null;
+  try {
+    const res = await fetch(url.replace(/\/clients\b.*/, "/context"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-suite-password": key },
+      body: JSON.stringify({ client: name, want: want })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || (!data.competitor && !data.strategy && !data.coverage)) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+// contextToPromptBlock(ctx) - renders whatever came back as a prompt block,
+// with a standing instruction to differentiate rather than echo.
+export function contextToPromptBlock(ctx) {
+  if (!ctx) return "";
+  const bits = [];
+  if (ctx.strategy && ctx.strategy.text) bits.push("CURRENT PR STRATEGY (agreed with the client - ideas should ladder up to this):\n" + ctx.strategy.text.slice(0, 3000));
+  if (ctx.competitor && ctx.competitor.text) bits.push("COMPETITOR PICTURE (differentiate from this territory, never repeat it):\n" + ctx.competitor.text.slice(0, 3000));
+  if (ctx.coverage && ctx.coverage.text) bits.push(ctx.coverage.text.slice(0, 1500) + "\n(Avoid pitching angles that repeat coverage already secured.)");
+  return bits.length ? "WHAT WE ALREADY KNOW (from the Pic PR suites):\n\n" + bits.join("\n\n") : "";
+}

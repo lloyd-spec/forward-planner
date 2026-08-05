@@ -119,7 +119,7 @@ Already on the calendar with dates we believe (only include if the REAL date dif
     try {
       const resp = await client.messages.create({
         model: SEARCH_MODEL,
-        max_tokens: 2000,
+        max_tokens: 5000,
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
         messages: [{
           role: "user",
