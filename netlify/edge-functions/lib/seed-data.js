@@ -167,8 +167,9 @@ export const SEED_EVENTS = [
     "provenance": "official"
   },
   {
-    "date": "03-22",
-    "event": "Mother's Day (4th Sunday Lent — UK)",
+    "date": "2027-03-07",
+    "event": "Mother's Day (4th Sunday Lent - UK)",
+    "moveable": true,
     "category": "Seasonal/Retail",
     "description": "Major UK gifting and hospitality moment.",
     "relevantFor": "Hospitality, retail, jewellery, beauty, florists, gifting",
@@ -260,6 +261,7 @@ export const SEED_EVENTS = [
   {
     "date": "05-15",
     "event": "Eurovision Song Contest (mid-May)",
+    "moveable": true,
     "category": "Cultural",
     "description": "Huge UK TV moment, party-friendly.",
     "relevantFor": "Hospitality, food & drink, retail, LGBT+ angles",
@@ -278,6 +280,7 @@ export const SEED_EVENTS = [
   {
     "date": "05-26",
     "event": "Chelsea Flower Show (late May)",
+    "moveable": true,
     "category": "Cultural",
     "description": "Major RHS garden event.",
     "relevantFor": "Garden, lifestyle, hospitality (estates), interiors",
@@ -341,22 +344,24 @@ export const SEED_EVENTS = [
     "provenance": "cultural"
   },
   {
-    "date": "06-23",
+    "date": "2027-06-28",
     "event": "Wimbledon begins (late June)",
+    "moveable": true,
     "category": "Sport",
     "description": "Major UK sporting moment, fashion+food crossover.",
     "relevantFor": "Sport, hospitality, food & drink (strawberries!), fashion, retail",
-    "notes": "Strawberries & cream features, fashion, expert picks",
+    "notes": "Strawberries & cream features, fashion, expert picks. 2027 dates confirmed 28 June to 11 July; the Scout verifies each year.",
     "duration": 14,
     "provenance": "cultural"
   },
   {
-    "date": "06-27",
+    "date": "2027-06-23",
     "event": "Glastonbury Festival (late June)",
+    "moveable": true,
     "category": "Cultural",
     "description": "Major UK festival, ~5 days media saturation.",
     "relevantFor": "Music, fashion, hospitality, food & drink, retail",
-    "notes": "Festival fashion, food trends, alternative content",
+    "notes": "Festival fashion, food trends, alternative content. 2026 was a fallow year; 2027 confirmed 23-27 June. The Scout verifies each edition.",
     "duration": 5,
     "provenance": "cultural"
   },
@@ -433,12 +438,12 @@ export const SEED_EVENTS = [
     "provenance": "cultural"
   },
   {
-    "date": "08-04",
+    "date": "1:fri:08",
     "event": "Edinburgh Fringe begins (early Aug)",
     "category": "Cultural",
     "description": "World's largest arts festival.",
     "relevantFor": "Arts, hospitality, Scottish brands, tourism",
-    "notes": "Festival picks, hospitality offers",
+    "notes": "Festival picks, hospitality offers. Reliably starts the first Friday of August and runs 25 days.",
     "duration": 25,
     "provenance": "cultural"
   },
@@ -1318,8 +1323,9 @@ export const SEED_EVENTS = [
     "provenance": "official"
   },
   {
-    "date": "02-17",
+    "date": "2027-02-09",
     "event": "Shrove Tuesday (Pancake Day)",
+    "moveable": true,
     "category": "Cultural (social-first)",
     "description": "Major UK food day. Moves with Easter, confirm the date each year.",
     "relevantFor": "Hospitality, food & drink, kitchenware, care",

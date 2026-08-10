@@ -1,8 +1,8 @@
 // /api/data — the hatch the web page and the other suite tools talk to.
-// GET  ?store=events|clients|settings|archive          → read (password protected)
+// GET  ?store=events|clients|settings|archive|event-status|media-opps → read (password protected)
 // GET  ?store=briefing&id=2026-06-15                   → read one briefing
 // GET  ?store=master-roster                            → the seed client list bundled with the deploy
-// PUT  ?store=events|clients|settings  (body = JSON)   → save (password protected)
+// PUT  ?store=events|clients|settings|event-status|media-opps (body = JSON) → save (password protected)
 //
 // The News Jacker and Idea Jacker fetch ?store=clients so the whole
 // suite shares one roster. Their domains are allowed via CORS below.
@@ -59,6 +59,8 @@ export default async function handler(request) {
     if (which === "clients")  return json(await getClients());
     if (which === "settings") return json(await getSettings());
     if (which === "archive")  return json(await getArchiveIndex());
+    if (which === "event-status") return json(await readJSON("event-status", {}));
+    if (which === "media-opps")   return json(await readJSON("media-opps", []));
     if (which === "master-roster") return json(SEED_CLIENTS);
     if (which === "briefing") {
       const id = url.searchParams.get("id") || "";
@@ -72,7 +74,7 @@ export default async function handler(request) {
     if (request.headers.get("x-password") !== PASSWORD) {
       return json({ error: "Wrong password" }, 401);
     }
-    if (!["events", "clients", "settings"].includes(which)) {
+    if (!["events", "clients", "settings", "event-status", "media-opps"].includes(which)) {
       return json({ error: "Cannot write to that store" }, 400);
     }
     let body;

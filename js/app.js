@@ -3,7 +3,7 @@
 // this page reads and writes it through /api/data and runs the engine
 // through /api/run, which streams progress lines as it works.
 
-const FP_VERSION = 'v14';
+const FP_VERSION = 'v15';
 // The password never lives in this file. What you type (or what arrives
 // from the suite homepage via #k=) is held for the session and checked
 // server-side against /api/data?store=verify.
@@ -182,6 +182,8 @@ async function saveStore(name, value) {
 
 async function init() {
   loadScout();
+  loadStatuses();
+  loadMediaOpps();
   try {
     [events, clients, settings] = await Promise.all([
       loadStore('events'), loadStore('clients'), loadStore('settings')
@@ -194,6 +196,7 @@ async function init() {
   renderClients();
   renderSettings();
   loadArchive();
+  showIncomingSeed();
 }
 
 // ============ Events (calendar) ============
@@ -211,6 +214,27 @@ function displayDate(e) {
   }
   return d;
 }
+
+function isValidDateRule(s) {
+  const d = String(s || '').trim();
+  return /^\d{2}-\d{2}$/.test(d) || /^\d{4}-\d{2}-\d{2}$/.test(d) || /^(\d|last):(mon|tue|wed|thu|fri|sat|sun):(\d{2})$/i.test(d);
+}
+
+// Live preview: as the date field is typed, show how the engine will read it
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'ef-date') return;
+  const hint = document.getElementById('ef-date-hint');
+  if (!hint) return;
+  const v = e.target.value.trim();
+  if (!v) { hint.textContent = ''; return; }
+  if (isValidDateRule(v)) {
+    hint.textContent = 'Reads as: ' + displayDate({ date: v });
+    hint.style.color = 'var(--teal-darker)';
+  } else {
+    hint.textContent = 'Not a recognised format yet';
+    hint.style.color = 'var(--amber)';
+  }
+});
 
 function sortKeyForEvent(e) {
   // A number meaning "place in the year": month x 100 + approximate day
@@ -253,7 +277,7 @@ function renderEvents() {
 function eventFormHTML(e = {}, index = -1) {
   return `
     <div class="grid">
-      <div><label class="form-label">Date: MM-DD recurring, YYYY-MM-DD one-off, or floating like 3:sun:06 (third Sunday of June) / last:fri:09</label><input type="text" id="ef-date" value="${escapeHtml(e.date || '')}"></div>
+      <div><label class="form-label">Date: MM-DD recurring, YYYY-MM-DD one-off, or floating like 3:sun:06 (third Sunday of June) / last:fri:09</label><input type="text" id="ef-date" value="${escapeHtml(e.date || '')}"><div id="ef-date-hint" class="muted" style="font-size:12px;margin-top:3px;">${e.date ? 'Reads as: ' + escapeHtml(displayDate(e)) : ''}</div></div>
       <div><label class="form-label">Event name</label><input type="text" id="ef-event" value="${escapeHtml(e.event || '')}"></div>
       <div><label class="form-label">Category</label><input type="text" id="ef-category" value="${escapeHtml(e.category || '')}" placeholder="Awareness / Cultural / Sport / Seasonal/Retail / Political/Economic"></div>
       <div><label class="form-label">Typically suits (sectors)</label><input type="text" id="ef-relevant" value="${escapeHtml(e.relevantFor || '')}"></div>
@@ -356,7 +380,7 @@ document.addEventListener('click', async (e) => {
       provenance: $('#ef-provenance').value
     };
     if (!ev.date || !ev.event) { alert('Date and event name are needed.'); return; }
-    if (!/^(\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/.test(ev.date)) { alert('Date must be MM-DD or YYYY-MM-DD.'); return; }
+    if (!isValidDateRule(ev.date)) { alert('Date must be MM-DD (recurring), YYYY-MM-DD (one-off) or a floating rule like 3:sun:06 or last:fri:09.'); return; }
     if (i === -1) events.push(ev); else events[i] = ev;
     $('#event-form').classList.add('hidden');
     await persist('events', events, renderEvents);
@@ -364,7 +388,7 @@ document.addEventListener('click', async (e) => {
 
   if (t.id === 'add-client-btn') { $('#client-form').innerHTML = clientFormHTML(); $('#client-form').classList.remove('hidden'); }
   if (t.id === 'sync-roster-btn') {
-    t.disabled = true; t.textContent = 'Syncing…';
+    t.disabled = true; t.textContent = 'Checking the master list...';
     try {
       const res = await fetch('/api/data?store=master-roster', { headers: { 'x-password': suiteKey } });
       if (!res.ok) throw new Error('Could not load the master list');
@@ -377,14 +401,14 @@ document.addEventListener('click', async (e) => {
       }
       if (added.length) {
         await persist('clients', clients, renderClients);
-        alert('Added ' + added.length + ' client(s) from the master list:\n' + added.join('\n'));
+        alert('Added ' + added.length + ' client(s) from the master list:\n' + added.join('\n') + '\n\nNote: this adds clients missing from the roster. It never changes clients you already have.');
       } else {
-        alert('Roster already matches the master list — nothing to add.');
+        alert('Every master-list client is already on the roster. Nothing added. (This button adds missing clients; it never changes existing ones.)');
       }
     } catch (err) {
-      alert('Sync failed: ' + err.message);
+      alert('Add failed: ' + err.message);
     }
-    t.disabled = false; t.textContent = 'Sync master list';
+    t.disabled = false; t.textContent = 'Add missing clients';
   }
   if (t.dataset.editClient !== undefined) { const i = +t.dataset.editClient; $('#client-form').innerHTML = clientFormHTML(clients[i], i); $('#client-form').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   if (t.dataset.delClient !== undefined) {
@@ -446,7 +470,6 @@ function renderSettings() {
   $('#set-personal').value = settings.personalEmail || '';
   $('#set-livesearch').checked = settings.liveSearch !== false;
   $('#set-commercial').checked = settings.includeCommercial !== false;
-  $('#cron-url').textContent = location.origin + '/api/run?key=YOUR-SECRET&email=1';
 }
 
 $('#save-settings-btn').addEventListener('click', async () => {
@@ -578,23 +601,66 @@ async function startRun(clientNames) {
 // ============ Briefing render ============
 const BUCKET_ACCENT = { act: 'var(--navy)', plan: 'var(--teal-darker)', radar: 'var(--amber)' };
 
-function seedTextFor(eventName, m) {
+function seedTextFor(eventName, m, it) {
   const bits = [];
-  if (m.idea) bits.push(m.idea.replace(/^"|"$/g, ''));
+  if (m.client) bits.push('Client: ' + m.client + '.');
+  bits.push('Pegged to ' + eventName + (it && it.date ? ' (' + it.date + ')' : '') + '.');
+  if (m.idea) bits.push(m.idea.replace(/^"|"$/g, '') + '.');
   bits.push((m.concept || m.angle || '').trim());
   if (m.headline) bits.push('Example headline: ' + m.headline);
   if (m.media || m.format) bits.push('Target media: ' + (m.media || m.format));
-  return 'Pegged to ' + eventName + '. ' + bits.join(' ');
+  if (it && it.pitchWindow) bits.push('Timing constraint: pitching must land ' + it.pitchWindow + '.');
+  else if (it && it.startBy) bits.push('Timing constraint: work starts ' + it.startBy + '.');
+  return bits.join(' ');
+}
+
+function ideaJackerButtons(seed) {
+  const url = 'https://ideajacker.netlify.app/?seed=' + encodeURIComponent(seed);
+  return '<a class="copy-seed ij-open" href="' + escapeHtml(url) + '" target="_blank" rel="noopener">Develop in Idea Jacker →</a>' +
+         '<button class="copy-seed" data-seed="' + escapeHtml(seed) + '">Copy</button>';
+}
+
+const STATUS_OPTIONS = [
+  ['', 'Unreviewed'],
+  ['pursuing', 'Pursuing'],
+  ['covered', 'Already covered'],
+  ['notRelevant', 'Not relevant'],
+  ['passed', 'Passed']
+];
+let eventStatuses = {};
+
+function statusSelectHTML(statusKey) {
+  if (!statusKey) return '';
+  const current = (eventStatuses[statusKey] || {}).status || '';
+  return `<select class="item-status" data-status-key="${escapeHtml(statusKey)}" title="Remembered for next Monday's briefing">` +
+    STATUS_OPTIONS.map(([v, l]) => `<option value="${v}" ${v === current ? 'selected' : ''}>${l}</option>`).join('') +
+    `</select>`;
 }
 
 function renderBriefing(b) {
   const totalIdeas = (b.sections || []).reduce((n, s) => n + (s.items || []).reduce((m, it) => m + (it.matches || []).length, 0), 0);
+  const sc = b.statusCounts || {};
   const chips = [
     (b.sections || []).reduce((n, s) => n + (s.items || []).length, 0) + ' moments',
     totalIdeas + ' ideas',
     b.freshCount ? b.freshCount + ' fresh finds' : '',
+    sc.covered ? sc.covered + ' already covered' : '',
+    sc.passed ? sc.passed + ' passed' : '',
     b.emailed ? 'Emailed to the team' : ''
   ].filter(Boolean);
+
+  const prios = (b.priorities || []);
+  const prioBlock = prios.length ? `
+    <div class="prio-block">
+      <div class="prio-title">${prios.length} thing${prios.length === 1 ? '' : 's'} Pic must act on this week</div>
+      ${prios.map((p, i) => `
+        <div class="prio-row">
+          <span class="prio-num">${i + 1}</span>
+          <div><strong>${escapeHtml(p.client)}</strong> · ${escapeHtml(p.event)}
+            <div class="prio-action">${escapeHtml(p.action)}${p.deadline ? ' <span class="prio-deadline">By ' + escapeHtml(p.deadline) + '</span>' : ''}</div>
+          </div>
+        </div>`).join('')}
+    </div>` : '';
 
   const sections = (b.sections || []).filter(s => s.items && s.items.length).map(s => {
     const accent = BUCKET_ACCENT[s.key] || 'var(--teal-darker)';
@@ -603,14 +669,20 @@ function renderBriefing(b) {
       <div class="brief-section-title" style="color:${accent}"><span class="section-dot" style="background:${accent}"></span>${escapeHtml(s.title)}<span class="section-count">${s.items.length}</span></div>
       ${s.items.map(it => `
         <div class="brief-item" style="border-left-color:${accent}">
-          <div class="brief-item-head">${escapeHtml(it.event)}</div>
-          <div class="brief-item-date">${escapeHtml(it.date)}${it.daysOut ? ' · ' + escapeHtml(String(it.daysOut)) + ' days out' : ''} · ${escapeHtml(it.why)}</div>
+          <div class="brief-item-head">${escapeHtml(it.event)}
+            ${it.type ? `<span class="type-chip" style="color:${accent};border-color:${accent}">${escapeHtml(it.type)}</span>` : ''}
+            ${statusSelectHTML(it.statusKey)}
+          </div>
+          <div class="brief-item-date">${escapeHtml(it.date)}${it.daysOut ? ' · ' + escapeHtml(String(it.daysOut)) + ' days out' : ''}</div>
+          ${it.whyNow ? `<div class="why-now"><span style="color:${accent}">Why now:</span> ${escapeHtml(it.whyNow)}</div>` : (it.why ? `<div class="why-now">${escapeHtml(it.why)}</div>` : '')}
+          ${(it.pitchWindow || it.startBy) ? `<div class="lead-times">${it.pitchWindow ? `<span style="color:${accent}">Pitch window:</span> ${escapeHtml(it.pitchWindow)}` : ''}${it.pitchWindow && it.startBy ? ' &nbsp;·&nbsp; ' : ''}${it.startBy ? `<span style="color:${accent}">Work starts:</span> ${escapeHtml(it.startBy)}` : ''}</div>` : ''}
+          ${it.lead && (it.matches || []).length > 1 ? `<div class="lead-times"><span style="color:${accent}">Recommended lead:</span> ${escapeHtml(it.lead)} (others take a different route)</div>` : ''}
           ${(it.matches || []).map(m => `
             <div class="idea-card">
               <div class="idea-card-top">
                 <span class="idea-client">${escapeHtml(m.client)}</span>
                 ${m.idea ? `<span class="idea-name" style="color:${accent}">${escapeHtml(m.idea)}</span>` : ''}
-                <button class="copy-seed" data-seed="${escapeHtml(seedTextFor(it.event, m))}">Copy for Idea Jacker</button>
+                ${ideaJackerButtons(seedTextFor(it.event, m, it))}
               </div>
               <div class="idea-concept">${escapeHtml(m.concept || m.angle || '')}</div>
               ${m.headline ? `<div class="idea-headline">“${escapeHtml(m.headline)}”</div>` : ''}
@@ -619,6 +691,25 @@ function renderBriefing(b) {
         </div>`).join('')}
     </div>`;
   }).join('');
+
+  const longLead = (b.longLead || []);
+  const longLeadBlock = longLead.length ? `
+    <div class="also-block">
+      <div class="brief-section-title" style="color:var(--sage,#5a7d5a)"><span class="section-dot" style="background:var(--sage,#5a7d5a)"></span>Long-lead horizon (2-6 months out)<span class="section-count">${longLead.length}</span></div>
+      ${longLead.map(l => `<div class="long-lead-row"><strong>${escapeHtml(l.event)}</strong> · ${escapeHtml(l.date || '')}${l.weeksOut ? ' · ' + l.weeksOut + ' weeks out' : ''}<div class="muted">${escapeHtml(l.note || '')}</div></div>`).join('')}
+    </div>` : '';
+
+  const quiet = (b.quiet || []);
+  const quietBlock = quiet.length ? `
+    <div class="also-block">
+      <div class="brief-section-title" style="color:var(--navy-muted)"><span class="section-dot" style="background:var(--navy-muted)"></span>No strong calendar-led opportunity<span class="section-count">${quiet.length}</span></div>
+      ${quiet.map(q => `<div class="long-lead-row"><strong>${escapeHtml(q.client)}</strong>: ${escapeHtml(q.note)}${q.suggest ? ' <span style="color:var(--teal-darker)">' + escapeHtml(q.suggest) + '</span>' : ''}</div>`).join('')}
+    </div>` : '';
+
+  const gaps = (b.gaps || []);
+  const gapsBlock = gaps.length
+    ? `<div class="brief-thin" style="margin-top:16px;"><strong>Possible calendar gaps</strong> (unverified, run the Scout to check): ${gaps.map(escapeHtml).join(' · ')}</div>`
+    : '';
 
   const alsoItems = (b.alsoNoted || []).map(x => typeof x === 'string'
     ? `<div class="also-card"><span class="also-name">${escapeHtml(x)}</span></div>`
@@ -640,9 +731,40 @@ function renderBriefing(b) {
       ${b.thinWarning ? '<div class="brief-thin">' + escapeHtml(b.thinWarning) + '</div>' : ''}
       <p class="brief-intro">${escapeHtml(b.intro)}</p>
     </div>
+    ${prioBlock}
     ${sections}
+    ${longLeadBlock}
+    ${quietBlock}
+    ${gapsBlock}
     ${also}`;
 }
+
+// ---------- Event status: tiny institutional memory ----------
+// Each briefing item carries a statusKey (event name + occurrence year).
+// Changing the dropdown saves for the whole team; next Monday's run skips
+// covered/passed/not-relevant occurrences and nudges pursuing ones.
+async function loadStatuses() {
+  try { eventStatuses = await loadStore('event-status'); } catch (e) { eventStatuses = {}; }
+  if (!eventStatuses || typeof eventStatuses !== 'object' || Array.isArray(eventStatuses)) eventStatuses = {};
+}
+
+document.addEventListener('change', async (e) => {
+  const sel = e.target.closest && e.target.closest('.item-status');
+  if (!sel) return;
+  const key = sel.dataset.statusKey;
+  if (!key) return;
+  let note = (eventStatuses[key] || {}).note || '';
+  if (sel.value === 'pursuing') {
+    note = prompt('Optional next action to remember (e.g. "Client approval due 14 August"):', note) || '';
+  }
+  if (sel.value) eventStatuses[key] = { status: sel.value, note, updatedOn: new Date().toISOString().slice(0, 10) };
+  else delete eventStatuses[key];
+  try {
+    await saveStore('event-status', eventStatuses);
+  } catch (err) {
+    alert('Could not save the status: ' + err.message);
+  }
+});
 
 // Copy-for-Idea-Jacker buttons
 document.addEventListener('click', (e) => {
@@ -722,7 +844,7 @@ async function runIdeation(ev) {
               <div class="idea-card-top">
                 <span class="idea-client">${escapeHtml(m.client)}</span>
                 ${m.idea ? `<span class="idea-name" style="color:var(--teal-darker)">${escapeHtml(m.idea)}</span>` : ''}
-                <button class="copy-seed" data-seed="${escapeHtml(seedTextFor(ev.event, m))}">Copy for Idea Jacker</button>
+                ${ideaJackerButtons(seedTextFor(ev.event, m))}
               </div>
               <div class="idea-concept">${escapeHtml(m.concept || '')}</div>
               ${m.headline ? `<div class="idea-headline">\u201C${escapeHtml(m.headline)}\u201D</div>` : ''}
@@ -736,6 +858,117 @@ async function runIdeation(ev) {
   }
 }
 
+
+// ---------- Media opportunities (editorial calendar) ----------
+// Forward features, supplements and awards the account team hears about.
+// Each carries a hard deadline; the briefing treats that as the date
+// pitching must land BY and plans backwards from it.
+
+let mediaOpps = [];
+
+async function loadMediaOpps() {
+  try { mediaOpps = await loadStore('media-opps'); } catch (e) { mediaOpps = []; }
+  if (!Array.isArray(mediaOpps)) mediaOpps = [];
+  renderMediaOpps();
+}
+
+function renderMediaOpps() {
+  const el = document.getElementById('media-opps');
+  if (!el) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const sorted = mediaOpps.map((m, i) => ({ ...m, _i: i }))
+    .sort((a, b) => String(a.deadline).localeCompare(String(b.deadline)));
+  const rows = sorted.map(m => {
+    const past = m.deadline < today;
+    return `<tr${past ? ' style="opacity:0.45"' : ''}>
+      <td><strong>${escapeHtml(displayDate({ date: m.deadline }))}</strong>${past ? '<div class="muted">passed</div>' : ''}</td>
+      <td>${escapeHtml(m.title)}${m.outlet ? '<div class="muted">' + escapeHtml(m.outlet) + '</div>' : ''}</td>
+      <td class="hide-mobile muted">${escapeHtml(m.client || '')}${m.notes ? '<div>' + escapeHtml(m.notes) + '</div>' : ''}</td>
+      <td class="row-actions">
+        <button data-edit-mo="${m._i}">Edit</button>
+        <button class="del" data-del-mo="${m._i}">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="panel-head" style="margin-top:26px;">
+      <p class="panel-blurb"><strong>Media opportunities.</strong> Forward features, supplements and awards with hard deadlines. The briefing plans backwards from each deadline: the pitch lands before it, not after.</p>
+      <button id="add-mo-btn" class="secondary-btn">+ Add deadline</button>
+    </div>
+    <div id="mo-form" class="edit-form hidden"></div>
+    ${mediaOpps.length ? `<table class="data-table">
+      <thead><tr><th>Deadline</th><th>Opportunity</th><th class="hide-mobile">Client / notes</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>` : '<p class="empty-note">Nothing logged yet. Add the first forward feature or awards deadline the moment a journalist mentions one.</p>'}`;
+}
+
+function moFormHTML(m = {}, index = -1) {
+  return `
+    <div class="grid">
+      <div><label class="form-label">Deadline (YYYY-MM-DD, the date pitching must land by)</label><input type="text" id="mo-deadline" value="${escapeHtml(m.deadline || '')}" placeholder="2026-09-12"></div>
+      <div><label class="form-label">Opportunity (e.g. "Christmas gift guide", "Care awards entry")</label><input type="text" id="mo-title" value="${escapeHtml(m.title || '')}"></div>
+      <div><label class="form-label">Outlet</label><input type="text" id="mo-outlet" value="${escapeHtml(m.outlet || '')}" placeholder="e.g. Cotswold Life"></div>
+      <div><label class="form-label">Client (optional, if logged for one client)</label><input type="text" id="mo-client" value="${escapeHtml(m.client || '')}"></div>
+      <div class="full"><label class="form-label">Notes (what they want, who to contact)</label><textarea id="mo-notes" rows="2">${escapeHtml(m.notes || '')}</textarea></div>
+    </div>
+    <div class="form-buttons">
+      <button class="primary-btn" data-save-mo="${index}">Save deadline</button>
+      <button class="secondary-btn" data-cancel-form="mo">Cancel</button>
+    </div>`;
+}
+
+document.addEventListener('click', async (e) => {
+  const t = e.target;
+  if (t.id === 'add-mo-btn') { $('#mo-form').innerHTML = moFormHTML(); $('#mo-form').classList.remove('hidden'); }
+  if (t.dataset.editMo !== undefined) { const i = +t.dataset.editMo; $('#mo-form').innerHTML = moFormHTML(mediaOpps[i], i); $('#mo-form').classList.remove('hidden'); }
+  if (t.dataset.delMo !== undefined) {
+    const i = +t.dataset.delMo;
+    if (confirm('Delete "' + mediaOpps[i].title + '"?')) {
+      mediaOpps.splice(i, 1);
+      await persist('media-opps', mediaOpps, renderMediaOpps);
+    }
+  }
+  if (t.dataset.saveMo !== undefined) {
+    const i = +t.dataset.saveMo;
+    const m = {
+      id: i === -1 ? ('mo-' + Date.now()) : (mediaOpps[i].id || 'mo-' + Date.now()),
+      deadline: $('#mo-deadline').value.trim(),
+      title: $('#mo-title').value.trim(),
+      outlet: $('#mo-outlet').value.trim(),
+      client: $('#mo-client').value.trim(),
+      notes: $('#mo-notes').value.trim()
+    };
+    if (!m.deadline || !m.title) { alert('A deadline and a name are needed.'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(m.deadline)) { alert('Deadline must be YYYY-MM-DD.'); return; }
+    if (i === -1) mediaOpps.push(m); else mediaOpps[i] = m;
+    $('#mo-form').classList.add('hidden');
+    await persist('media-opps', mediaOpps, renderMediaOpps);
+  }
+  if (t.dataset.cancelForm === 'mo') $('#mo-form').classList.add('hidden');
+});
+
+// ---------- Incoming seed (hand-off from the News Jacker) ----------
+// The News Jacker's "send to" buttons can arrive with ?seed= carrying a
+// reactive brief. Show it and offer to work it up on the spot.
+
+function showIncomingSeed() {
+  const m = location.search.match(/[?&]seed=([^&]+)/) || location.hash.match(/seed=([^&]+)/);
+  if (!m) return;
+  let seed = '';
+  try { seed = decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch (e) { return; }
+  if (!seed.trim()) return;
+  history.replaceState(null, '', location.pathname);
+  const view = $('#briefing-view');
+  const banner = document.createElement('div');
+  banner.className = 'brief-thin';
+  banner.style.cssText = 'margin-bottom:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;';
+  banner.innerHTML = '<span style="flex:1;min-width:200px;"><strong>Brief handed over:</strong> ' + escapeHtml(seed.slice(0, 300)) + (seed.length > 300 ? '...' : '') + '</span>' +
+    '<button class="primary-btn" id="seed-ideate-btn">Generate ideas from this brief</button>';
+  view.parentNode.insertBefore(banner, view);
+  document.getElementById('seed-ideate-btn').addEventListener('click', () => {
+    runIdeation({ event: seed.slice(0, 90), description: seed });
+  });
+}
 
 // ---------- Event scout review queue ----------
 // Proposals the monthly live-search sweep found, each with the source page
@@ -759,19 +992,26 @@ function renderScout(proposals) {
     '</strong> calendar update' + (proposals.length === 1 ? '' : 's') +
     ' found by the event scout - each links its evidence. Approve to add, reject to bin.</span>' +
     '<button onclick="runScout(this)">Run a fresh sweep</button></div>' +
-    proposals.map(p => (
-      '<div class="scout-card">' +
-        '<div><strong>' + escapeHtml(p.event) + '</strong> · ' + escapeHtml(p.date) +
-        ' <span class="chip">' + escapeHtml(p.category || '') + '</span>' +
-        '<div class="sc-meta">' + escapeHtml(p.description || '') +
-        (p.source ? ' <a href="' + escapeHtml(p.source) + '" target="_blank" rel="noopener">source</a>' : '') +
-        '</div></div>' +
+    proposals.map(p => {
+      const isUpdate = p.kind === 'update';
+      const detail = isUpdate
+        ? '<div class="sc-meta"><strong>Calendar says:</strong> ' + escapeHtml(p.currentResolved || p.currentDate || '?') +
+          ' &nbsp;→&nbsp; <strong>Verified:</strong> ' + escapeHtml(p.date) +
+          (p.duration > 1 ? ' (runs ' + p.duration + ' days)' : '') +
+          (p.source ? ' <a href="' + escapeHtml(p.source) + '" target="_blank" rel="noopener">source</a>' : '') + '</div>'
+        : '<div class="sc-meta">' + escapeHtml(p.description || '') +
+          (p.duration > 1 ? ' Runs ' + p.duration + ' days.' : '') +
+          (p.source ? ' <a href="' + escapeHtml(p.source) + '" target="_blank" rel="noopener">source</a>' : '') + '</div>';
+      return '<div class="scout-card' + (isUpdate ? ' scout-update' : '') + '">' +
+        '<div><strong>' + escapeHtml(p.event) + '</strong>' + (isUpdate ? '' : ' · ' + escapeHtml(p.date)) +
+        ' <span class="chip">' + (isUpdate ? 'DATE UPDATE' : escapeHtml(p.category || '')) + '</span>' +
+        detail + '</div>' +
         '<div class="scout-actions">' +
-          '<button class="approve" onclick="scoutAct(\'' + p.id + '\', \'approve\')">Approve</button>' +
+          '<button class="approve" onclick="scoutAct(\'' + p.id + '\', \'approve\')">' + (isUpdate ? 'Approve update' : 'Approve') + '</button>' +
           '<button onclick="scoutAct(\'' + p.id + '\', \'reject\')">Reject</button>' +
         '</div>' +
-      '</div>'
-    )).join('');
+      '</div>';
+    }).join('');
 }
 
 async function scoutAct(id, action) {

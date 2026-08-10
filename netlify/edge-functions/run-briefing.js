@@ -1,97 +1,35 @@
 // /api/run — the Forward Planner engine.
 // Triggered two ways:
-//   1. cron-job.org every Monday 7am:  GET /api/run?key=CRON_SECRET&email=1
-//   2. The web page's Run button:      POST /api/run  (x-password header, {email: true/false})
+//   1. The Netlify Monday schedule:  GET /api/run?key=CRON_SECRET&email=1
+//   2. The web page's Run button:    POST /api/run  (x-password header)
 //
-// Pipeline: load calendar + clients → compute the 8-week window and lead-time
-// buckets → (optional) live web search for freshly announced dated events →
-// Claude composes the briefing in Pic PR house style → email via Resend →
-// archive in Blobs. Progress streams back as NDJSON lines so the run can
-// take as long as it needs.
+// Pipeline: load calendar + clients + statuses + media deadlines → compute
+// the main window and the long-lead horizon → (optional) live web search for
+// freshly announced dated events (evidence URL required) → the provider chain
+// composes the briefing, planning BACKWARDS from the PR deadline → the code
+// validates every fact against the source data → email via Resend → archive.
+// Progress streams back as NDJSON lines so the run can take as long as it needs.
+//
+// The composer's job is judgement and writing. The code enforces the facts:
+// no invented events, no adjusted dates, no unknown clients.
 
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.39.0";
-import { getEvents, getClients, getSettings, saveBriefing } from "./lib/storage.js";
-import { generateWithFallback } from "./lib/providers.js";
+import { getEvents, getClients, getSettings, saveBriefing, readJSON } from "./lib/storage.js";
+import { generateWithFallback, providerKeys } from "./lib/providers.js";
+import { computeWindow, computeLongLead, statusKeyFor, normName, fmtDate } from "./lib/dates.js";
+import { validateComposed } from "./lib/validate-briefing.js";
+import { fetchRegistryClients, profileToPromptBlock, fetchClientContext, contextToPromptBlock } from "./lib/clients-registry.js";
 
 const PASSWORD = Netlify.env.get("SUITE_PASSWORD") || crypto.randomUUID() /* no SUITE_PASSWORD env var: gate fails closed - set it in Netlify */;
 const COMPOSE_TIER = "premium"; // CLAUDE_MODEL_PREMIUM env var
 const SEARCH_MODEL = Netlify.env.get("CLAUDE_MODEL_STANDARD") || "claude-sonnet-4-6";
-
-// ---------- Date helpers ----------
-
-function resolveEvent(dateStr, durationDays, now) {
-  // "MM-DD" recurs annually; "YYYY-MM-DD" is a one-off. Multi-day events
-  // (weeks, months, tournaments) stay live until their end date, so an
-  // ongoing month is never skipped just because its first day has passed.
-  const mk = (y, mm, dd) => new Date(y + "-" + mm + "-" + dd + "T12:00:00Z");
-  let start;
-  const floating = /^(\d|last):(mon|tue|wed|thu|fri|sat|sun):(\d{2})$/i.exec(dateStr);
-  if (floating) {
-    // Floating rule like "3:sun:06" (third Sunday of June) or "last:fri:09"
-    const dows = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
-    const dow = dows[floating[2].toLowerCase()];
-    const month = parseInt(floating[3], 10);
-    const compute = (y) => {
-      if (floating[1].toLowerCase() === "last") {
-        const lastDay = new Date(Date.UTC(y, month, 0, 12));
-        return new Date(lastDay.getTime() - ((lastDay.getUTCDay() - dow + 7) % 7) * 86400000);
-      }
-      const first = new Date(Date.UTC(y, month - 1, 1, 12));
-      const offset = (dow - first.getUTCDay() + 7) % 7;
-      return new Date(first.getTime() + (offset + (parseInt(floating[1], 10) - 1) * 7) * 86400000);
-    };
-    start = compute(now.getUTCFullYear());
-    const end0 = new Date(start.getTime() + (durationDays - 1) * 86400000);
-    if (end0.getTime() < now.getTime() - 86400000) start = compute(now.getUTCFullYear() + 1);
-  } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    start = new Date(dateStr + "T12:00:00Z");
-  } else {
-    const m = /^(\d{2})-(\d{2})$/.exec(dateStr);
-    if (!m) return null;
-    const y = now.getUTCFullYear();
-    start = mk(y, m[1], m[2]);
-    const end0 = new Date(start.getTime() + (durationDays - 1) * 86400000);
-    if (end0.getTime() < now.getTime() - 86400000) start = mk(y + 1, m[1], m[2]);
-  }
-  const end = new Date(start.getTime() + (durationDays - 1) * 86400000);
-  return { start, end };
-}
-
-function bucketFor(daysOut) {
-  if (daysOut >= 35) return "act";       // 5-8 weeks: long-lead pitching opens NOW
-  if (daysOut >= 14) return "plan";      // 2-5 weeks: draft, brief, book
-  return "radar";                         // under 2 weeks: reactive and social territory
-}
-
-function fmtDate(d) {
-  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "long", timeZone: "Europe/London" });
-}
-
-function computeWindow(events, windowDays) {
-  const now = new Date();
-  const windowEnd = now.getTime() + windowDays * 86400000;
-  const out = [];
-  for (const e of events) {
-    const duration = Math.max(1, parseInt(e.duration, 10) || 1);
-    const r = resolveEvent((e.date || "").trim(), duration, now);
-    if (!r) continue;
-    if (r.start.getTime() > windowEnd || r.end.getTime() < now.getTime() - 86400000) continue;
-    let daysOut = Math.round((r.start.getTime() - now.getTime()) / 86400000);
-    let niceDate, ongoing = false;
-    if (daysOut < 0) {
-      ongoing = true;
-      daysOut = 0;
-      niceDate = "Ongoing until " + fmtDate(r.end);
-    } else {
-      niceDate = fmtDate(r.start) + (duration > 1 ? ", runs " + duration + " days" : "");
-    }
-    out.push({ ...e, resolvedDate: r.start.toISOString().slice(0, 10), niceDate, daysOut, ongoing, duration, bucket: ongoing ? "radar" : bucketFor(daysOut) });
-  }
-  out.sort((a, b) => a.daysOut - b.daysOut);
-  return out;
-}
+const LONG_LEAD_DAYS = 180;
 
 // ---------- Live search for freshly announced events ----------
+// Claude-only (it needs the web search tool). Every find must carry the
+// URL of the page evidencing its date - no source, no entry. If the
+// Anthropic key is missing the search is skipped and the briefing still
+// composes through the provider chain.
 
 async function searchFreshEvents(apiKey, windowDays, knownEvents, clients) {
   const sectors = [...new Set(clients.map(c => c.industry).filter(Boolean))].slice(0, 12);
@@ -108,9 +46,9 @@ async function searchFreshEvents(apiKey, windowDays, knownEvents, clients) {
 Already on our calendar (do NOT repeat these): ${known}
 
 Return ONLY a valid JSON array (no preamble, no fences) of 0 to 8 items:
-{"date": "YYYY-MM-DD", "event": "name", "description": "what it is and why it matters, 1-2 sentences", "category": "Cultural|Sport|Political/Economic|Awareness|Seasonal/Retail"}
+{"date": "YYYY-MM-DD", "event": "name", "description": "what it is and why it matters, 1-2 sentences", "category": "Cultural|Sport|Political/Economic|Awareness|Seasonal/Retail", "source": "URL of the page evidencing the date"}
 
-Only include events with a confirmed, specific date you found real evidence of. British English. An empty array is a fine answer.`
+RULES: only include events with a confirmed, specific date you found on a real page, and "source" must be that page's URL. No source, no entry. British English. An empty array is a fine answer.`
     }]
   });
   const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("");
@@ -118,7 +56,11 @@ Only include events with a confirmed, specific date you found real evidence of. 
   if (s === -1 || e === -1) return [];
   try {
     const items = JSON.parse(text.slice(s, e + 1));
-    return Array.isArray(items) ? items.slice(0, 8) : [];
+    if (!Array.isArray(items)) return [];
+    return items.filter(it =>
+      /^\d{4}-\d{2}-\d{2}$/.test(String(it.date || "")) &&
+      /^https?:\/\//.test(String(it.source || ""))
+    ).slice(0, 8);
   } catch (err) { return []; }
 }
 
@@ -133,63 +75,105 @@ const HOUSE_STYLE = `WRITING RULES (Pic PR house style, non-negotiable, applies 
 - Banned words and phrases: "I hope this finds you well", "reach out", "touch base", "testament to", "now more than ever", "in today's fast-paced world", "game-changer", "delve", "landscape" (figurative), "elevate", "leverage", "unlock", "vibrant", "bustling", "nestled", any AI-flavoured filler
 - No sycophancy, no hedging, no throat-clearing`;
 
-function buildComposePrompt(windowEvents, freshEvents, clients, focusNames) {
-  const clientLines = clients.filter(c => c.active !== false).map(c => {
-    let l = `- ${c.name} (${c.industry}): ${c.description}`;
-    if (c.topics) l += ` Topics: ${c.topics}.`;
-    if (c.tone) l += ` Tone: ${c.tone}.`;
-    if (c.avoid) l += ` AVOID: ${c.avoid}.`;
-    if (c.prospect) l += ` STATUS: new business prospect — pitch-to-win boldness.`;
-    return l;
+function clientLine(c, registry) {
+  let l = `- ${c.name} (${c.industry}): ${c.description}`;
+  if (c.topics) l += ` Topics: ${c.topics}.`;
+  if (c.tone) l += ` Tone: ${c.tone}.`;
+  if (c.avoid) l += ` AVOID: ${c.avoid}.`;
+  if (c.briefing) l += ` CURRENTLY PITCHING: ${c.briefing}.`;
+  if (c.prospect) l += ` STATUS: new business prospect - pitch-to-win boldness.`;
+  const profile = registry && registry.byName(c.name);
+  if (profile) {
+    const block = profileToPromptBlock(profile);
+    if (block) l += "\n  " + block.replace(/\n/g, "\n  ");
+  }
+  return l;
+}
+
+function buildComposePrompt({ windowEvents, freshEvents, mediaOpps, longLeadCandidates, clients, focusNames, registry, contextBlocks, pursuingNotes }) {
+  const clientLines = clients.filter(c => c.active !== false).map(c => clientLine(c, registry)).join("\n");
+
+  const evLines = windowEvents.map(e => {
+    let tags = `[${e.proximity}]`;
+    if (e.provenance) tags += `[${e.provenance.toUpperCase()}]`;
+    if (e.category) tags += `[${e.category.toUpperCase()}]`;
+    const pursuing = pursuingNotes && pursuingNotes.get(normName(e.event));
+    if (pursuing !== undefined) tags += `[ALREADY PURSUING${pursuing ? ": " + pursuing : ""}]`;
+    return `- ${tags} ${e.niceDate}${e.ongoing ? "" : " (" + e.daysOut + " days out)"}: ${e.event} - ${e.description}${e.relevantFor ? " Typically suits: " + e.relevantFor + "." : ""}${e.notes ? " Hooks: " + e.notes : ""}`;
   }).join("\n");
 
-  const evLines = windowEvents.map(e =>
-    `- [${e.ongoing ? "ONGOING" : e.bucket.toUpperCase()}]${e.provenance ? "[" + e.provenance.toUpperCase() + "]" : ""} ${e.niceDate}${e.ongoing ? "" : " (" + e.daysOut + " days out)"}: ${e.event} — ${e.description}${e.relevantFor ? " Typically suits: " + e.relevantFor + "." : ""}${e.notes ? " Hooks: " + e.notes : ""}`
-  ).join("\n");
-
   const freshLines = freshEvents.length
-    ? "\n\nFRESHLY SPOTTED THIS WEEK (found by live web search — newly announced, not on the curated calendar; flag them as fresh):\n" +
-      freshEvents.map(e => `- ${e.date}: ${e.event} — ${e.description}`).join("\n")
+    ? "\n\nFRESHLY SPOTTED THIS WEEK (found by live web search with an evidence URL, not yet on the curated calendar; flag them as fresh):\n" +
+      freshEvents.map(e => `- ${e.date}: ${e.event} - ${e.description} (source: ${e.source})`).join("\n")
     : "";
 
-  return `You are the planning desk of Pic PR, a UK PR agency. Every Monday you brief the team on the moments coming in the next eight weeks and who should own them. Your edge is TIME: you exist so long-lead opportunities are started while the window is still open.
+  const mediaLines = mediaOpps.length
+    ? "\n\nMEDIA OPPORTUNITIES WITH HARD DEADLINES (forward features and supplements the account team has logged; the deadline is the date pitching must land BY, not an event date):\n" +
+      mediaOpps.map(m => `- DEADLINE ${m.niceDate} (${m.daysOut} days away): ${m.event}${m.outlet ? " - " + m.outlet : ""}${m.notes ? ". " + m.notes : ""}${m.client ? " Logged for: " + m.client + "." : ""}`).join("\n")
+    : "";
+
+  const longLeadLines = longLeadCandidates.length
+    ? "\n\nLONG-LEAD HORIZON (2-6 months out; NOT for worked-up ideas; select ONLY moments that genuinely need work to start unusually early, such as Christmas gift guides, major seasonal packages, research campaigns, awards deadlines and big anniversaries):\n" +
+      longLeadCandidates.map(e => `- ${e.niceDate} (${e.weeksOut} weeks out): ${e.event} - ${e.description || ""}`).join("\n")
+    : "";
+
+  return `You are the planning director of Pic PR, a UK PR agency. Every Monday you brief the team on what is coming and, crucially, WHEN WORK MUST START. Your edge is lead time: the event date is not the PR deadline. A Christmas gift guide eight weeks out can already be late; a reactive comment two weeks out can be too early. You plan backwards from the moment pitching must land.
 
 ${HOUSE_STYLE}
 
-LEAD-TIME LOGIC (this is the whole point of the briefing):
-- ACT (5-8 weeks out): long-lead pitching opens now — print monthlies and weekend supplements work this far ahead. These come first.
-- PLAN (2-5 weeks out): draft the comment, brief the spokesperson, book photography, commission anything that needs lead time.
-- RADAR (under 2 weeks): reactive and social territory now. If something here deserved long-lead work that never started, say so plainly in one clause, no scolding.
+LEAD-TIME LOGIC (this is the whole point of the briefing). For every opportunity, reason backwards:
+1. What is the strongest PR route for this moment and client?
+2. When must the pitch land for that route? (Print monthlies and weekend supplements commission 6-10 weeks ahead. Regional and online run 1-2 weeks ahead. Broadcast is days. Surveys need 3+ weeks for questionnaire, fieldwork and analysis. Photography, filming, family permissions and case-study approval need 2-3 weeks before pitching can start.)
+3. So when does work need to begin, and what is THIS WEEK's action?
+
+SECTION PLACEMENT is decided by the action deadline, never by how far away the event is:
+- "act" (Act this week): the next meaningful action must happen in the next seven days, whether the event is three weeks or four months away.
+- "plan" (Prepare next): nothing due this week, but work needs starting within the next fortnight or two.
+- "radar" (On the horizon): worth knowing about; no action needed yet.
+
+OPPORTUNITY TYPES. Tag every item with "type", one of: Awareness moment | Seasonal opportunity | Editorial deadline | Data release | Industry report | Awards deadline | Major event | Commercial moment. Each type demands different behaviour:
+- Data release / Industry report: this is PLANNED REACTIVE PR. The trigger is predictable, so the response is prepared before the number exists: pre-agree conditional comments (one if the figure rises, one if it falls), confirm spokesperson availability for publication morning, pitch immediately on release.
+- Editorial deadline: the pitch must land BEFORE the stated deadline. Work backwards from it.
+- Awards deadline: identify the candidate, gather evidence, draft, review, submit before the deadline.
+- Awareness moment / Seasonal opportunity: create the campaign, build assets, pre-pitch long-lead media inside the pitch window.
 
 THE CLIENTS:
 ${clientLines}
-
-THE CALENDAR (next 8 weeks):
-${evLines}${freshLines}
+${contextBlocks || ""}
+THE CALENDAR (main window):
+${evLines}${freshLines}${mediaLines}${longLeadLines}
 
 ${focusNames ? `FOCUSED PLAN RUN. This briefing is being built for ${focusNames.join(" and ")} ONLY. Cover EVERY event in the window with genuine fit for them, not just the strongest dozen. Where a moment really suits, give two distinct ideas. Depth over breadth: this is the raw material for a dedicated PR plan.
 
 ` : ""}YOUR JOB:
-1. AUGMENT THE CALENDAR FROM YOUR OWN KNOWLEDGE. Before choosing, add any awareness days, weeks and months falling in the window that the calendar misses: UN international days, established UK awareness weeks and months, and quirky days that justify social-first creative. VET EVERYTHING FOR UK RELEVANCE: where UK and US dates differ use the UK date (Mothering Sunday is not US Mother's Day), and exclude US-only observances (Thanksgiving, US Labor Day and similar) unless they have genuine UK media traction. Only include dates you are confident of; if unsure of the exact date, skip it. Treat anything you add exactly like a calendar event.
-2. PROVENANCE HIERARCHY. Events carry a provenance tag: OFFICIAL (UN, WHO, government), CHARITY, CULTURAL, INDUSTRY (sector bodies; the care and hospitality weeks here are first-class for this roster) and COMMERCIAL (brand-invented or internet-origin days). COMMERCIAL days may ONLY appear as social-first ideas, never lead a section and never crowd out a stronger moment; one or two per briefing at most. When you augment from your own knowledge, apply the same classification and exclude pure brand inventions with no genuine UK media traction.
+1. USE ONLY THE EVENTS, DEADLINES AND FRESH FINDS SUPPLIED ABOVE. Never add events from your own knowledge and never adjust a date. If you believe a significant UK moment in this window is missing from everything supplied, name it in "gaps" (bare name plus one clause on why it matters) so the Event Scout can verify it. Gaps get no worked-up ideas.
+2. PROVENANCE HIERARCHY. OFFICIAL (UN, WHO, government), CHARITY, CULTURAL, INDUSTRY (sector bodies; the care and hospitality weeks here are first-class for this roster) and COMMERCIAL (brand-invented or internet-origin days). COMMERCIAL days may ONLY appear as social-first ideas, never lead a section and never crowd out a stronger moment; one or two per briefing at most.
 3. Pick the events with genuine client fit. Quality over coverage: a sharp briefing of 12-16 events beats a phone book. Skip events with no honest match. Ongoing months and weeks are live opportunities, not missed ones; suggest the mid-period moment that still works.
-4. For each chosen event, name 1-3 best-fit clients. Every match is a WORKED-UP IDEA in the Pic PR house anatomy, not a positioning line:
-   - "idea": a short concept name, in quotes when it earns a name (most should)
-   - "concept": 2-4 sentences. The concrete mechanic someone can picture (what happens, who is in the frame, what the photo or film shows), and a clause on why it works for this client at this moment
-   - "headline": an example PR headline in house style, the line a journalist might actually run. No em dashes, no colons-for-drama unless natural
-   - "media": named target desks and outlets, concrete (e.g. "regional broadcast, BBC Radio Stoke, Care Home Professional, lifestyle pages of the i")
-   - "action": the specific thing to do THIS WEEK given the lead time
-5. VARIETY IS MANDATORY. Across the whole briefing mix photo-led stunts, partnerships, community events, data and survey stories, resident or staff-led human stories and social-first series. Plain expert comment may carry AT MOST a quarter of all matches, and never two matches in a row. If you catch yourself writing "offer expert comment", find the idea instead.
-6. Social-first days earn their place when a client could own them with quick, charming creative. For those, "concept" describes the actual content (what the post or reel literally shows) and "media" can simply read "Social-first". The briefing should always carry a handful.
-7. Where the fit allows, make at least one match per event a bolder swing; prospects always get one. A good idea makes someone want to paste it straight into the Idea Jacker and build it out.
-8. Respect every AVOID line absolutely.
-9. Events you considered but skipped go in "alsoNoted" as bare names so the team can see the full calendar at a glance.
-10. DATE FIDELITY: copy each item's date field exactly as provided in the calendar line. Never invent, adjust or "correct" a weekday or date.
-11. Respect the bucket tags: an event tagged ACT belongs in the act section, PLAN in plan, RADAR or ONGOING in radar. Do not promote or demote events between sections.
-12. Write a 2-3 sentence intro: what matters most this week and why.
+4. Events tagged [ALREADY PURSUING] are in hand. Give them at most ONE short entry: "concept" is a single-sentence status nudge naming the next step, no fresh campaign, no new ideas.
+5. For each chosen event provide:
+   - "type": the opportunity type from the list above
+   - "whyNow": ONE concise sentence explaining why this enters the workload now (e.g. "Women's monthly magazines begin commissioning September wellbeing pages over the next fortnight" or "A survey-led story needs three weeks for questionnaire, fieldwork and analysis"). Never just restate the days-out number.
+   - "pitchWindow": when pitching should land, concrete (e.g. "24 August to 4 September")
+   - "startBy": when work must begin (e.g. "This week, by Friday")
+   - "matches": 1-3 best-fit clients, each a WORKED-UP IDEA in the Pic PR house anatomy:
+     - "idea": a short concept name, in quotes when it earns a name (most should)
+     - "concept": 2-4 sentences. The concrete mechanic someone can picture (what happens, who is in the frame, what the photo or film shows), and a clause on why it works for this client at this moment
+     - "headline": an example PR headline in house style, the line a journalist might actually run
+     - "media": named target desks and outlets, concrete
+     - "action": the specific thing to do THIS WEEK given the lead time
+6. CLIENT COLLISIONS. When one event carries matches for two or three clients in the same sector, set "lead" to the client with the strongest existing credentials for the national route, and give the others a genuinely different route (regional, trade, social-first) so three similar comments never chase the same national desk.
+7. VARIETY IS MANDATORY. Across the whole briefing mix photo-led stunts, partnerships, community events, data and survey stories, resident or staff-led human stories and social-first series. Plain expert comment may carry AT MOST a quarter of all matches, and never two matches in a row. If you catch yourself writing "offer expert comment", find the idea instead.
+8. Social-first days earn their place when a client could own them with quick, charming creative. For those, "concept" describes the actual content (what the post or reel literally shows) and "media" can simply read "Social-first". The briefing should always carry a handful.
+9. Where the fit allows, make at least one match per event a bolder swing; prospects always get one. Identify the opportunity and recommend the route; the heavier creative development happens in the Idea Jacker, so a match needs enough substance to judge, not six executions.
+10. Respect every AVOID line absolutely.
+11. "priorities": the ruthless top of the briefing. The 3-5 things Pic must act on THIS WEEK, each {"client", "event", "action", "deadline"} where "action" is one sentence and "deadline" is the day it must happen by. These are chosen from your act section, hardest deadlines first.
+12. "longLead": from the LONG-LEAD HORIZON list only, select up to 5 moments that genuinely need early work, each {"event", "note"} where "note" is one sentence on what needs deciding or confirming and roughly when (e.g. "Consumer festive features need a distinctive product confirmed next month"). No worked-up ideas here.
+13. "quiet": active clients with NO genuine calendar-led opportunity in this window. Never force a weak connection to get everyone in. Each {"client", "note", "suggest"} where "note" is one honest sentence and "suggest" names the better route (e.g. "Idea Jacker or Roots territory this month").
+14. Events you considered but skipped go in "alsoNoted" as bare names.
+15. Write a 2-3 sentence intro: what matters most this week and why.
 
 Return ONLY valid JSON, no other text, exactly this shape:
-{"intro": "...", "sections": [{"key": "act", "title": "Act this week", "items": [{"event": "...", "date": "Mon 20 July", "daysOut": 40, "why": "one line on the moment itself", "matches": [{"client": "...", "idea": "\"Concept Name\"", "concept": "the mechanic and why it works, 2-4 sentences", "headline": "Example PR headline in house style", "media": "named target desks and outlets", "action": "what to do this week"}]}]}, {"key": "plan", "title": "Start planning", "items": []}, {"key": "radar", "title": "On the radar", "items": []}], "alsoNoted": ["...", "..."]}`;
+{"intro": "...", "priorities": [{"client": "...", "event": "...", "action": "...", "deadline": "Friday 14 August"}], "sections": [{"key": "act", "title": "Act this week", "items": [{"event": "...", "date": "Mon 20 July", "type": "Awareness moment", "whyNow": "one sentence", "pitchWindow": "...", "startBy": "...", "lead": "", "matches": [{"client": "...", "idea": "\\"Concept Name\\"", "concept": "...", "headline": "...", "media": "...", "action": "..."}]}]}, {"key": "plan", "title": "Prepare next", "items": []}, {"key": "radar", "title": "On the horizon", "items": []}], "longLead": [{"event": "...", "note": "..."}], "quiet": [{"client": "...", "note": "...", "suggest": "..."}], "gaps": ["..."], "alsoNoted": ["..."]}`;
 }
 
 // Parse the composer's JSON, repairing truncation if the output was clipped:
@@ -257,16 +241,32 @@ function esc(s) {
 }
 
 function renderEmailHTML(briefing, siteUrl) {
-  const navy = "#0a2540", teal = "#2a657d", muted = "#5a6478", cream = "#faf6ee", amber = "#b06a00";
+  const navy = "#0a2540", teal = "#2a657d", muted = "#5a6478", cream = "#faf6ee", amber = "#b06a00", sage = "#5a7d5a";
   const accents = { act: navy, plan: teal, radar: amber };
+
+  const prios = (briefing.priorities || []);
+  const prioBlock = prios.length
+    ? `<div style="margin:18px 0 6px;padding:16px 18px;background:${navy};border-radius:12px;">
+        <div style="font-size:12px;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;color:#f3d9a4;margin-bottom:10px;">&#9679;&nbsp; ${prios.length} thing${prios.length === 1 ? "" : "s"} Pic must act on this week</div>
+        ${prios.map((p, i) => `
+          <div style="padding:8px 0;${i ? "border-top:1px solid rgba(255,255,255,0.15);" : ""}">
+            <div style="font-size:14px;color:#ffffff;"><strong>${i + 1}. ${esc(p.client)}</strong> · ${esc(p.event)}</div>
+            <div style="font-size:13px;color:#d7e0ea;margin-top:2px;">${esc(p.action)}${p.deadline ? ` <strong style="color:#f3d9a4;">By ${esc(p.deadline)}</strong>` : ""}</div>
+          </div>`).join("")}
+      </div>`
+    : "";
+
   const sectionBlocks = briefing.sections.filter(s => s.items && s.items.length).map(s => {
     const accent = accents[s.key] || teal;
     return `
     <h2 style="font-size:13px;letter-spacing:0.1em;text-transform:uppercase;color:${accent};margin:30px 0 4px;">&#9679;&nbsp; ${esc(s.title)}</h2>
     ${s.items.map(it => `
       <div style="border-left:3px solid ${accent};padding:12px 16px;margin:12px 0;background:#ffffff;border-radius:0 10px 10px 0;">
-        <div style="font-size:16px;font-weight:700;color:${navy};font-family:Georgia,serif;">${esc(it.event)}</div>
-        <div style="font-size:12px;color:${muted};margin-top:1px;">${esc(it.date)}${it.daysOut ? " · " + it.daysOut + " days out" : ""} · ${esc(it.why)}</div>
+        <div style="font-size:16px;font-weight:700;color:${navy};font-family:Georgia,serif;">${esc(it.event)}${it.type ? ` <span style="font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${accent};border:1px solid ${accent};border-radius:20px;padding:2px 8px;vertical-align:middle;">${esc(it.type)}</span>` : ""}</div>
+        <div style="font-size:12px;color:${muted};margin-top:1px;">${esc(it.date)}${it.daysOut ? " · " + it.daysOut + " days out" : ""}</div>
+        ${it.whyNow ? `<div style="font-size:12.5px;color:${navy};margin-top:5px;"><strong style="color:${accent};">Why now:</strong> ${esc(it.whyNow)}</div>` : ""}
+        ${(it.pitchWindow || it.startBy) ? `<div style="font-size:12px;color:${muted};margin-top:3px;">${it.pitchWindow ? `<strong style="color:${accent};">Pitch window:</strong> ${esc(it.pitchWindow)}` : ""}${it.pitchWindow && it.startBy ? " &nbsp;·&nbsp; " : ""}${it.startBy ? `<strong style="color:${accent};">Work starts:</strong> ${esc(it.startBy)}` : ""}</div>` : ""}
+        ${it.lead && (it.matches || []).length > 1 ? `<div style="font-size:12px;color:${muted};margin-top:3px;"><strong style="color:${accent};">Recommended lead:</strong> ${esc(it.lead)} (others take a different route)</div>` : ""}
         ${(it.matches || []).map(m => `
           <div style="margin-top:12px;padding-top:10px;border-top:1px solid #efe9dc;">
             <div style="font-size:13.5px;color:${navy};"><strong>${esc(m.client)}</strong>${m.idea ? ' · <strong style="color:' + accent + ';">' + esc(m.idea) + "</strong>" : ""}</div>
@@ -278,12 +278,43 @@ function renderEmailHTML(briefing, siteUrl) {
   `;
   }).join("");
 
+  const longLead = (briefing.longLead || []);
+  const longLeadBlock = longLead.length
+    ? `<div style="margin-top:26px;padding:16px 18px;background:#ffffff;border:1px solid #e3ddd0;border-radius:12px;">
+        <div style="font-size:12px;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;color:${sage};margin-bottom:10px;">&#9679;&nbsp; Long-lead horizon (2-6 months out)</div>
+        ${longLead.map(l => `
+          <div style="font-size:13px;color:${navy};line-height:1.5;padding:4px 0;"><strong>${esc(l.event)}</strong> · ${esc(l.date || "")}${l.weeksOut ? " · " + l.weeksOut + " weeks out" : ""}<br><span style="color:${muted};">${esc(l.note || "")}</span></div>`).join("")}
+      </div>`
+    : "";
+
+  const quiet = (briefing.quiet || []);
+  const quietBlock = quiet.length
+    ? `<div style="margin-top:18px;padding:16px 18px;background:#ffffff;border:1px solid #e3ddd0;border-radius:12px;">
+        <div style="font-size:12px;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;color:${muted};margin-bottom:10px;">&#9679;&nbsp; No strong calendar-led opportunity</div>
+        ${quiet.map(q => `<div style="font-size:13px;color:${navy};line-height:1.5;padding:4px 0;"><strong>${esc(q.client)}</strong>: ${esc(q.note)}${q.suggest ? ` <span style="color:${teal};">${esc(q.suggest)}</span>` : ""}</div>`).join("")}
+      </div>`
+    : "";
+
+  const gaps = (briefing.gaps || []);
+  const gapsBlock = gaps.length
+    ? `<p style="font-size:12.5px;color:#8a5a00;background:#fdf3dd;border-radius:8px;padding:10px 14px;margin-top:16px;"><strong>Possible calendar gaps</strong> (unverified, send to the Event Scout): ${gaps.map(esc).join(" · ")}</p>`
+    : "";
+
+  const sc = briefing.statusCounts || {};
+  const statusBits = [];
+  if (sc.covered) statusBits.push(sc.covered + " already covered");
+  if (sc.passed) statusBits.push(sc.passed + " passed on");
+  if (sc.notRelevant) statusBits.push(sc.notRelevant + " marked not relevant");
+  const statusLine = statusBits.length
+    ? `<p style="font-size:12px;color:${muted};margin-top:14px;">Left out on your say-so: ${statusBits.join(", ")}.</p>`
+    : "";
+
   const alsoEntries = (briefing.alsoNoted || []).map(x =>
     typeof x === "string"
       ? esc(x)
       : esc(x.event) + ` <span style="color:${muted};">· ${esc(x.date || "")}</span>`);
   const also = alsoEntries.length
-    ? `<div style="margin-top:28px;padding:16px 18px;background:#ffffff;border:1px solid #e3ddd0;border-radius:12px;">
+    ? `<div style="margin-top:22px;padding:16px 18px;background:#ffffff;border:1px solid #e3ddd0;border-radius:12px;">
         <div style="font-size:12px;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;color:${teal};margin-bottom:10px;">&#9679;&nbsp; Also on the calendar</div>
         <div style="font-size:13px;color:${navy};line-height:1.9;">${alsoEntries.join("<br>")}</div>
         <div style="font-size:12px;color:${muted};margin-top:10px;">Open the <a href="${siteUrl}" style="color:${teal};">Forward Planner</a> and hit Generate ideas on any of these.</div>
@@ -303,12 +334,17 @@ function renderEmailHTML(briefing, siteUrl) {
       <div style="font-family:Arial,sans-serif;">
         ${thin}
         <p style="font-size:14px;color:${navy};line-height:1.55;">${esc(briefing.intro)}</p>
+        ${prioBlock}
         ${sectionBlocks}
+        ${longLeadBlock}
+        ${quietBlock}
+        ${gapsBlock}
+        ${statusLine}
         ${also}
         <hr style="border:none;border-top:1px solid #e3ddd0;margin:28px 0 14px;">
         <p style="font-size:12px;color:${muted};line-height:1.6;">
-          Spotted a moment we're missing? <a href="${siteUrl}" style="color:${teal};">Add it to the calendar</a>.
-          Like an idea? Paste it into the <a href="https://ideajacker.netlify.app" style="color:${teal};">Idea Jacker</a> ("Develop your own idea") and build it out.
+          Spotted a moment we're missing? <a href="${siteUrl}" style="color:${teal};">Add it to the calendar</a>, or log a forward feature under Media opportunities.
+          Like an idea? Send it to the <a href="https://ideajacker.netlify.app" style="color:${teal};">Idea Jacker</a> and build it out.
         </p>
       </div>
     </td></tr>
@@ -339,9 +375,14 @@ export default async function handler(request) {
     return new Response(JSON.stringify({ error: "Not authorised" }), { status: 401 });
   }
 
-  const apiKey = Netlify.env.get("ANTHROPIC_API_KEY");
+  // The briefing composes through the provider chain (Claude, then ChatGPT,
+  // then Gemini), so any one key is enough. Only the live web search is
+  // Claude-specific and skips gracefully without the Anthropic key.
+  const keys = providerKeys();
+  if (!keys.claude && !keys.openai && !keys.gemini) {
+    return new Response(JSON.stringify({ error: "No AI provider keys set on this site" }), { status: 500 });
+  }
   const resendKey = Netlify.env.get("RESEND_API_KEY");
-  if (!apiKey) return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY not set" }), { status: 500 });
 
   // emailMode: "none" | "team" | "me". The cron URL's email=1 means "team".
   let emailMode = url.searchParams.get("email") === "1" ? "team" : "none";
@@ -360,8 +401,12 @@ export default async function handler(request) {
     async start(controller) {
       const send = (obj) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
       try {
-        send({ type: "status", message: "Loading the calendar and client roster..." });
-        const [events, allClients, settings] = await Promise.all([getEvents(), getClients(), getSettings()]);
+        send({ type: "status", message: "Loading the calendar, roster, statuses and media deadlines..." });
+        const [events, allClients, settings, statuses, mediaOppsRaw] = await Promise.all([
+          getEvents(), getClients(), getSettings(),
+          readJSON("event-status", {}),
+          readJSON("media-opps", [])
+        ]);
         let clients = allClients;
         if (focusNames) {
           const wanted = new Set(focusNames.map(n => String(n).toLowerCase()));
@@ -374,8 +419,41 @@ export default async function handler(request) {
         if (settings.includeCommercial === false) {
           allEvents = events.filter(e => e.provenance !== "commercial");
         }
-        const windowEvents = computeWindow(allEvents, settings.windowDays || 56);
-        send({ type: "status", message: windowEvents.length + " events in the next 8 weeks." });
+        const windowDays = settings.windowDays || 56;
+        let windowEvents = computeWindow(allEvents, windowDays);
+
+        // Institutional memory: occurrences the team has already decided on.
+        // Covered, passed and not-relevant events leave the briefing entirely
+        // (counted, so the email says why). Pursuing events stay, tagged, and
+        // get a status nudge rather than a fresh pitch.
+        const statusCounts = { covered: 0, passed: 0, notRelevant: 0 };
+        const pursuingNotes = new Map();
+        windowEvents = windowEvents.filter(e => {
+          const st = statuses[statusKeyFor(e.event, e.resolvedDate)];
+          if (!st || !st.status) return true;
+          if (st.status === "covered") { statusCounts.covered++; return false; }
+          if (st.status === "passed") { statusCounts.passed++; return false; }
+          if (st.status === "notRelevant") { statusCounts.notRelevant++; return false; }
+          if (st.status === "pursuing") pursuingNotes.set(normName(e.event), st.note || "");
+          return true;
+        });
+        send({ type: "status", message: windowEvents.length + " events in the main window." });
+
+        // Media opportunities with hard deadlines, logged by the account team
+        const now = new Date();
+        const mediaOpps = (Array.isArray(mediaOppsRaw) ? mediaOppsRaw : [])
+          .filter(m => /^\d{4}-\d{2}-\d{2}$/.test(String(m.deadline || "")))
+          .map(m => {
+            const d = new Date(m.deadline + "T12:00:00Z");
+            const daysOut = Math.round((d.getTime() - now.getTime()) / 86400000);
+            return { ...m, event: m.title, niceDate: fmtDate(d), daysOut };
+          })
+          .filter(m => m.daysOut >= 0 && m.daysOut <= windowDays + 14)
+          .sort((a, b) => a.daysOut - b.daysOut);
+        if (mediaOpps.length) send({ type: "status", message: mediaOpps.length + " media deadline" + (mediaOpps.length === 1 ? "" : "s") + " in play." });
+
+        // The long-lead horizon: 2-6 months out, major moments only
+        const longLeadCandidates = computeLongLead(allEvents, windowDays, LONG_LEAD_DAYS).slice(0, 30);
 
         let thinWarning = "";
         if (windowEvents.length < 5) {
@@ -384,26 +462,50 @@ export default async function handler(request) {
 
         let fresh = [];
         if (settings.liveSearch !== false) {
-          send({ type: "status", message: "Searching the web for freshly announced dates..." });
-          try {
-            fresh = await searchFreshEvents(apiKey, settings.windowDays || 56, windowEvents, clients);
-            if (fresh.length) send({ type: "status", message: "Found " + fresh.length + " fresh events worth a look." });
-          } catch (err) {
-            send({ type: "status", message: "Live search unavailable this run — carrying on with the curated calendar." });
+          if (keys.claude) {
+            send({ type: "status", message: "Searching the web for freshly announced dates..." });
+            try {
+              fresh = await searchFreshEvents(keys.claude, windowDays, windowEvents, clients);
+              if (fresh.length) send({ type: "status", message: "Found " + fresh.length + " fresh events, each with an evidence link." });
+            } catch (err) {
+              send({ type: "status", message: "Live search unavailable this run - carrying on with the curated calendar." });
+            }
+          } else {
+            send({ type: "status", message: "Live search needs the Claude key - skipped, composing from the curated calendar." });
           }
         }
 
-        send({ type: "status", message: "Composing the briefing in house style..." });
-        // Compose via the provider chain (Claude first, then ChatGPT and
-        // Gemini if their keys are set). A heartbeat trickles down every
-        // few seconds so the connection survives however long it takes.
+        // Cross-suite intelligence: registry profiles for everyone, and the
+        // saved strategy / competitor / coverage context on focused runs.
+        let registry = null;
+        let contextBlocks = "";
+        try {
+          registry = await fetchRegistryClients();
+          if (registry) send({ type: "status", message: "Client registry connected - profiles folded in." });
+        } catch (e) {}
+        if (focusNames && clients.length <= 3) {
+          for (const c of clients) {
+            try {
+              const ctx = await fetchClientContext(c.name, ["strategy", "competitor", "coverage"]);
+              const block = contextToPromptBlock(ctx);
+              if (block) contextBlocks += "\n" + c.name.toUpperCase() + " - " + block + "\n";
+            } catch (e) {}
+          }
+          if (contextBlocks) send({ type: "status", message: "Saved strategy and coverage context loaded for the focused clients." });
+        }
+
+        send({ type: "status", message: "Composing the briefing, planning backwards from each PR deadline..." });
         let text = "";
         let lastBeat = Date.now();
         const composeResult = await generateWithFallback({
           tier: COMPOSE_TIER,
           maxTokens: 16000,
           system: "",
-          user: buildComposePrompt(windowEvents, fresh, clients, focusNames ? clients.map(c => c.name) : null),
+          user: buildComposePrompt({
+            windowEvents, freshEvents: fresh, mediaOpps, longLeadCandidates,
+            clients, focusNames: focusNames ? clients.map(c => c.name) : null,
+            registry, contextBlocks, pursuingNotes
+          }),
           onDelta: (t) => {
             text += t;
             if (Date.now() - lastBeat > 4000) {
@@ -415,19 +517,28 @@ export default async function handler(request) {
         });
         text = composeResult.text;
         if (composeResult.provider !== "Claude") send({ type: "status", message: "Composed by " + composeResult.provider + " (fallback)." });
-        const stopReason = "";
         let composed;
         try {
           composed = parseComposedJSON(text);
         } catch (err) {
-          throw new Error("The composer's output could not be read" + (stopReason === "max_tokens" ? " even after repair (it ran far past the length limit). Run it again." : ". Run it again."));
-        }
-        if (stopReason === "max_tokens") {
-          send({ type: "status", message: "The briefing ran long and was tidied at the edge. Everything shown is intact." });
+          throw new Error("The composer's output could not be read. Run it again.");
         }
         composed = stripEmDashes(composed);
 
-        const now = new Date();
+        // Deterministic validation: every item traced to a source, every
+        // date corrected to the truth, every client checked against the roster.
+        send({ type: "status", message: "Checking every date and client against the source data..." });
+        const sources = [
+          ...windowEvents.map(e => ({ event: e.event, niceDate: e.niceDate, daysOut: e.daysOut, statusKey: statusKeyFor(e.event, e.resolvedDate), kind: "calendar" })),
+          ...fresh.map(e => ({ event: e.event, niceDate: fmtDate(new Date(e.date + "T12:00:00Z")), daysOut: Math.max(0, Math.round((new Date(e.date + "T12:00:00Z").getTime() - now.getTime()) / 86400000)), statusKey: "", kind: "fresh" })),
+          ...mediaOpps.map(m => ({ event: m.event, niceDate: "Deadline " + m.niceDate, daysOut: m.daysOut, statusKey: "", kind: "media" }))
+        ];
+        const { composed: checked, report } = validateComposed(composed, sources, longLeadCandidates, clients);
+        composed = checked;
+        if (report.droppedItems.length) {
+          send({ type: "status", message: report.droppedItems.length + " unverifiable item" + (report.droppedItems.length === 1 ? "" : "s") + " removed: " + report.droppedItems.slice(0, 4).join("; ") + (report.droppedItems.length > 4 ? "..." : "") });
+        }
+
         const focusLabel = focusNames && clients.length ? clients.map(c => c.name).join(" & ") : "";
         const slug = focusLabel ? "-" + focusLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) : "";
         const id = now.toISOString().slice(0, 10) + slug;
@@ -439,7 +550,6 @@ export default async function handler(request) {
 
         // Build "also on the calendar" ourselves from the real window,
         // so every leftover carries its true date and can be ideated on.
-        const normName = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
         const usedNames = [];
         for (const sec of (composed.sections || [])) {
           for (const it of (sec.items || [])) usedNames.push(normName(it.event));
@@ -453,7 +563,12 @@ export default async function handler(request) {
           id, date: now.toISOString(), subject,
           intro: composed.intro || "",
           thinWarning,
+          priorities: composed.priorities || [],
           sections: composed.sections || [],
+          longLead: composed.longLead || [],
+          quiet: composed.quiet || [],
+          gaps: composed.gaps || [],
+          statusCounts,
           alsoNoted: leftovers,
           freshCount: fresh.length,
           emailed: false

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=14">
+<link rel="stylesheet" href="css/styles.css?v=15">
 </head>
 <body>
 
@@ -58,7 +58,7 @@
           <div class="welcome">
             <div class="welcome-kicker">Monday briefing · six to eight weeks out</div>
             <h2>Own what's coming.</h2>
-            <p>Each run reads the curated calendar and matches what's ahead to the client roster, with reactive angles ready to pitch before the moment arrives.</p>
+            <p>Each run reads the curated calendar, matches what's ahead to the client roster and plans backwards from every PR deadline, so long-lead work starts while the window is still open.</p>
             <div class="welcome-chips">
               <span class="w-chip amber">Awareness days</span>
               <span class="w-chip teal">Cultural moments</span>
@@ -76,7 +76,7 @@
 
       <section class="panel" id="panel-calendar">
         <div class="panel-head">
-          <p class="panel-blurb">The curated calendar, the backbone of every briefing. Recurring events use <code>MM-DD</code> (e.g. <code>10-10</code> for World Mental Health Day); one-offs use <code>YYYY-MM-DD</code>. Edits save for the whole team instantly.</p>
+          <p class="panel-blurb">The curated calendar, the backbone of every briefing. Recurring events use <code>MM-DD</code>, one-offs <code>YYYY-MM-DD</code>, and moveable days can float: <code>3:sun:06</code> means the third Sunday of June. Edits save for the whole team instantly.</p>
           <div class="calendar-tools">
             <input type="text" id="event-search" placeholder="Search the calendar...">
             <button id="add-event-btn" class="secondary-btn">+ Add event</button>
@@ -86,12 +86,13 @@
         <div id="prov-filters" class="prov-filters"></div>
         <div id="event-form" class="edit-form hidden"></div>
         <div id="events-table"></div>
+        <div id="media-opps"></div>
       </section>
 
       <section class="panel" id="panel-clients">
         <div class="panel-head">
           <p class="panel-blurb">The roster the briefing matches against. Tone sharpens the angles, the avoid line is law, prospects get bolder thinking. Untick "active" to rest a client without deleting them.</p>
-          <button id="sync-roster-btn" class="secondary-btn">Sync master list</button>
+          <button id="sync-roster-btn" class="secondary-btn" title="Adds clients missing from the roster. Never changes existing ones.">Add missing clients</button>
           <button id="add-client-btn" class="secondary-btn">+ Add client</button>
         </div>
         <div id="client-form" class="edit-form hidden"></div>
@@ -117,9 +118,8 @@
             <p class="hint">Adds 15–30 seconds and a few pence per run. Catches tour dates, fixtures and report publications the curated calendar can't know about.</p>
           </div>
           <div class="settings-card">
-            <h3>Monday automation</h3>
-            <p class="hint">In cron-job.org create a job with this URL (GET), scheduled Mondays 07:00 Europe/London. Replace YOUR-SECRET with the CRON_SECRET you set in Netlify's environment variables.</p>
-            <code class="cron-url" id="cron-url"></code>
+            <h3>Automation (built in)</h3>
+            <p class="hint">The Monday briefing sends itself: a Netlify schedule fires every Monday at 07:00 UTC, which lands 7am in winter and 8am in summer, before the week starts either way. The Event Scout sweeps for new and moved dates at 06:00 UTC on the 1st of each month; its finds wait for approval on the Calendar tab. Nothing external to maintain. Both need CRON_SECRET set in Netlify's environment variables.</p>
           </div>
         </div>
         <button id="save-settings-btn" class="primary-btn">Save settings</button>
@@ -141,6 +141,6 @@
     </div>
   </div>
 
-<script src="js/app.js?v=14"></script>
+<script src="js/app.js?v=15"></script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 :root {
+  --sage: #5a7d5a;
   --amber: #b06a00;
   --amber-soft: #fdf3dd;
   --navy: #0a2540;
@@ -234,3 +235,33 @@ body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 
 .run-client-row { display: flex; align-items: center; gap: 7px; font-size: 13px; padding: 3px 0; cursor: pointer; }
 .run-client-row input { width: 14px; height: 14px; accent-color: var(--teal-dark); flex-shrink: 0; }
 @media (max-width: 560px) { .run-client-list { grid-template-columns: 1fr; } }
+
+/* ---------- August 2026: backwards planning ---------- */
+
+/* Priorities block: the ruthless top of the briefing */
+.prio-block { background: var(--navy); border-radius: 14px; padding: 18px 20px; margin: 4px 0 22px; }
+.prio-title { font-size: 12px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #f3d9a4; margin-bottom: 10px; }
+.prio-row { display: flex; gap: 12px; padding: 9px 0; color: #fff; font-size: 14px; }
+.prio-row + .prio-row { border-top: 1px solid rgba(255,255,255,0.14); }
+.prio-num { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.14); color: #f3d9a4; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.prio-action { font-size: 13px; color: #d7e0ea; margin-top: 2px; line-height: 1.5; }
+.prio-deadline { color: #f3d9a4; font-weight: 600; }
+
+/* Opportunity type chip and lead-time lines on briefing items */
+.type-chip { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid; border-radius: 20px; padding: 2px 9px; margin-left: 8px; vertical-align: middle; }
+.why-now { font-size: 13px; color: var(--navy); margin-top: 5px; line-height: 1.5; }
+.lead-times { font-size: 12.5px; color: var(--navy-muted); margin-top: 3px; }
+
+/* Status dropdown: remembered for next Monday's run */
+.item-status { float: right; font-size: 12px; padding: 3px 6px; border: 0.5px solid var(--border); border-radius: 7px; background: var(--card); color: var(--navy-muted); cursor: pointer; }
+.item-status:focus { outline: none; border-color: var(--teal-dark); }
+
+/* Long-lead and quiet-client rows */
+.long-lead-row { font-size: 13.5px; color: var(--navy); padding: 6px 0; line-height: 1.5; }
+.long-lead-row + .long-lead-row { border-top: 1px solid var(--border); }
+
+/* Scout date-update proposals */
+.scout-card.scout-update { border-left: 3px solid var(--amber); }
+
+/* Open-in-Idea-Jacker link shares the copy button's look */
+a.ij-open { text-decoration: none; display: inline-block; }
