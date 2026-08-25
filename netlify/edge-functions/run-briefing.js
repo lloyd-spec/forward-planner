@@ -496,25 +496,31 @@ export default async function handler(request) {
 
         send({ type: "status", message: "Composing the briefing, planning backwards from each PR deadline..." });
         let text = "";
-        let lastBeat = Date.now();
-        const composeResult = await generateWithFallback({
-          tier: COMPOSE_TIER,
-          maxTokens: 16000,
-          system: "",
-          user: buildComposePrompt({
-            windowEvents, freshEvents: fresh, mediaOpps, longLeadCandidates,
-            clients, focusNames: focusNames ? clients.map(c => c.name) : null,
-            registry, contextBlocks, pursuingNotes
-          }),
-          onDelta: (t) => {
-            text += t;
-            if (Date.now() - lastBeat > 4000) {
-              send({ type: "tick" });
-              lastBeat = Date.now();
-            }
-          },
-          onStatus: (m) => send({ type: "status", message: m })
-        });
+        console.log("Compose starting: " + windowEvents.length + " events, " + clients.length + " clients");
+        // Heartbeat on a timer, NOT tied to model output: reasoning models
+        // can think silently for minutes before the first text delta, and a
+        // silent stream gets cut by the network. Ticks keep it warm.
+        const heartbeat = setInterval(() => {
+          try { send({ type: "tick" }); } catch (e) {}
+        }, 5000);
+        let composeResult;
+        try {
+          composeResult = await generateWithFallback({
+            tier: COMPOSE_TIER,
+            maxTokens: 16000,
+            system: "",
+            user: buildComposePrompt({
+              windowEvents, freshEvents: fresh, mediaOpps, longLeadCandidates,
+              clients, focusNames: focusNames ? clients.map(c => c.name) : null,
+              registry, contextBlocks, pursuingNotes
+            }),
+            onDelta: (t) => { text += t; },
+            onStatus: (m) => send({ type: "status", message: m })
+          });
+        } finally {
+          clearInterval(heartbeat);
+        }
+        console.log("Compose finished via " + composeResult.provider + ", " + composeResult.text.length + " chars");
         text = composeResult.text;
         if (composeResult.provider !== "Claude") send({ type: "status", message: "Composed by " + composeResult.provider + " (fallback)." });
         let composed;
@@ -602,9 +608,10 @@ export default async function handler(request) {
 
         send({ type: "done", briefing });
       } catch (err) {
-        send({ type: "error", message: err.message });
+        console.error("Run failed: " + (err && err.stack || err));
+        try { send({ type: "error", message: err.message }); } catch (e) {}
       }
-      controller.close();
+      try { controller.close(); } catch (e) {}
     }
   });
 
