@@ -507,7 +507,7 @@ export default async function handler(request) {
         try {
           composeResult = await generateWithFallback({
             tier: COMPOSE_TIER,
-            maxTokens: 16000,
+            maxTokens: 24000,
             system: "",
             user: buildComposePrompt({
               windowEvents, freshEvents: fresh, mediaOpps, longLeadCandidates,
