@@ -177,8 +177,8 @@ body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 
 .idea-card-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .idea-client { font-size: 13.5px; font-weight: 700; color: var(--navy); }
 .idea-name { font-family: var(--display); font-size: 14.5px; font-weight: 600; font-style: italic; }
-.copy-seed { margin-left: auto; font-size: 11px; font-weight: 700; font-family: inherit; padding: 4px 10px; border-radius: 7px; background: white; border: 0.5px solid var(--border-strong); color: var(--teal-darker); cursor: pointer; transition: all 0.15s ease; }
-.copy-seed:hover { border-color: var(--teal-dark); background: var(--teal-soft); }
+.copy-seed, .ij-open { margin-left: auto; text-decoration: none; font-size: 11px; font-weight: 700; font-family: inherit; padding: 4px 10px; border-radius: 7px; background: white; border: 0.5px solid var(--border-strong); color: var(--teal-darker); cursor: pointer; transition: all 0.15s ease; }
+.copy-seed:hover, .ij-open:hover { border-color: var(--teal-dark); background: var(--teal-soft); }
 .copy-seed.copied { background: var(--teal-darker); color: white; border-color: var(--teal-darker); }
 .idea-concept { font-size: 13.5px; line-height: 1.55; color: var(--navy-text); margin-top: 7px; }
 .idea-headline { font-family: var(--display); font-style: italic; font-size: 15px; color: var(--teal-darker); margin-top: 8px; line-height: 1.4; }

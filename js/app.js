@@ -684,9 +684,14 @@ function seedTextFor(eventName, m, it) {
   return bits.join(' ');
 }
 
+const IDEA_JACKER_URL = 'https://ideajacker.netlify.app/';
+
+// The hand-off link is built at click time so the suite key travels with it
+// (in the URL fragment, which never reaches a server) and the Idea Jacker
+// opens already unlocked in the new tab - the same as the suite homepage
+// and the News Jacker do. The key is not written into the page's HTML.
 function ideaJackerButtons(seed) {
-  const url = 'https://ideajacker.netlify.app/?seed=' + encodeURIComponent(seed);
-  return '<a class="copy-seed ij-open" href="' + escapeHtml(url) + '" target="_blank" rel="noopener">Develop in Idea Jacker →</a>' +
+  return '<a class="ij-open" href="' + escapeHtml(IDEA_JACKER_URL) + '" data-seed="' + escapeHtml(seed) + '" target="_blank" rel="noopener">Develop in Idea Jacker →</a>' +
          '<button class="copy-seed" data-seed="' + escapeHtml(seed) + '">Copy</button>';
 }
 
@@ -834,6 +839,16 @@ document.addEventListener('change', async (e) => {
   } catch (err) {
     alert('Could not save the status: ' + err.message);
   }
+});
+
+// Develop in Idea Jacker: open with the key and the brief in the fragment
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('.ij-open');
+  if (!link) return;
+  e.preventDefault();
+  const seed = link.dataset.seed || '';
+  const frag = '#k=' + encodeURIComponent(suiteKey || '') + '&seed=' + encodeURIComponent(seed);
+  window.open(IDEA_JACKER_URL + frag, '_blank', 'noopener');
 });
 
 // Copy-for-Idea-Jacker buttons
