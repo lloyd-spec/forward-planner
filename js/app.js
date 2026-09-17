@@ -3,7 +3,7 @@
 // this page reads and writes it through /api/data and runs the engine
 // through /api/run, which streams progress lines as it works.
 
-const FP_VERSION = 'v16';
+const FP_VERSION = 'v17';
 // The password never lives in this file. What you type (or what arrives
 // from the suite homepage via #k=) is held for the session and checked
 // server-side against /api/data?store=verify.

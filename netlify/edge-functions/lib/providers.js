@@ -122,7 +122,7 @@ async function runClaude(apiKey, opts) {
     // counts against max_tokens AND against runtime wall-clock and CPU
     // limits. Cap the effort so long thoughts stay affordable. Same
     // pattern as POTW.
-    /^claude-opus-5/.test(String(opts.claudeModel)) ? { output_config: { effort: "medium" } } : {}))
+    /opus-5|fable/i.test(String(opts.claudeModel)) ? { output_config: { effort: Netlify.env.get("CLAUDE_EFFORT") || "medium" } } : {}))
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");

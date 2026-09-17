@@ -37,9 +37,16 @@ async function searchFreshEvents(apiKey, windowDays, knownEvents, clients) {
   const sectors = [...new Set(clients.map(c => c.industry).filter(Boolean))].slice(0, 12);
   const known = knownEvents.map(e => e.event).join("; ");
   const client = new Anthropic({ apiKey });
-  const resp = await client.messages.create({
+  // A search that hangs must not hang the whole briefing: 90 seconds, then
+  // the run carries on with the curated calendar (the caller catches).
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 90000);
+  let resp;
+  try {
+  resp = await client.messages.create({
     model: SEARCH_MODEL,
     max_tokens: 4000,
+    ...(/opus-5|fable/i.test(String(SEARCH_MODEL)) ? { output_config: { effort: "medium" } } : {}),
     tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
     messages: [{
       role: "user",
@@ -52,7 +59,8 @@ Return ONLY a valid JSON array (no preamble, no fences) of 0 to 8 items:
 
 RULES: only include events with a confirmed, specific date you found on a real page, and "source" must be that page's URL. No source, no entry. British English. An empty array is a fine answer.`
     }]
-  });
+  }, { signal: ac.signal });
+  } finally { clearTimeout(timer); }
   const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("");
   const s = text.indexOf("["), e = text.lastIndexOf("]");
   if (s === -1 || e === -1) return [];
@@ -402,7 +410,16 @@ export default async function handler(request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (obj) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+      let closed = false;
+      const send = (obj) => {
+        if (closed) return;
+        try { controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n")); } catch (e) { closed = true; }
+      };
+      // Heartbeat for the WHOLE run, not just the compose step. The live web
+      // search and the registry/context fetches can be silent for a minute
+      // or more, and a silent stream gets cut by the network ("network
+      // error" on the page). Ticks every 5 seconds keep it warm throughout.
+      const runHeartbeat = setInterval(() => send({ type: "tick" }), 5000);
       try {
         send({ type: "status", message: "Loading the calendar, roster, statuses and media deadlines..." });
         const [events, allClients, settings, statuses, mediaOppsRaw] = await Promise.all([
@@ -502,12 +519,8 @@ export default async function handler(request) {
         send({ type: "status", message: "Composing the briefing, planning backwards from each PR deadline..." });
         let text = "";
         console.log("Compose starting: " + windowEvents.length + " events, " + clients.length + " clients");
-        // Heartbeat on a timer, NOT tied to model output: reasoning models
-        // can think silently for minutes before the first text delta, and a
-        // silent stream gets cut by the network. Ticks keep it warm.
-        const heartbeat = setInterval(() => {
-          try { send({ type: "tick" }); } catch (e) {}
-        }, 5000);
+        // (The run-wide heartbeat started at the top covers this silent
+        // reasoning phase too.)
         let composeResult;
         try {
           composeResult = await generateWithFallback({
@@ -523,7 +536,7 @@ export default async function handler(request) {
             onStatus: (m) => send({ type: "status", message: m })
           });
         } finally {
-          clearInterval(heartbeat);
+          // heartbeat is cleared at the end of the run
         }
         console.log("Compose finished via " + composeResult.provider + ", " + composeResult.text.length + " chars");
         text = composeResult.text;
@@ -616,6 +629,8 @@ export default async function handler(request) {
         console.error("Run failed: " + (err && err.stack || err));
         try { send({ type: "error", message: err.message }); } catch (e) {}
       }
+      clearInterval(runHeartbeat);
+      closed = true;
       try { controller.close(); } catch (e) {}
     }
   });
