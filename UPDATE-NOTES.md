@@ -1,5 +1,7 @@
 # Update - 12 September 2026
 
+- 17 Sep: (cite ...) markup from the web-search model is stripped from live-search and Scout results before they are read.
+
 - 17 Sep: "Develop in Idea Jacker" also passes the client name, so the Idea Jacker opens with that brand pre-selected.
 
 - 17 Sep: "Develop in Idea Jacker" now carries the suite key in the link fragment, so the Idea Jacker opens already unlocked in the new tab instead of stopping at its password screen. The key is added at click time and never written into the page.

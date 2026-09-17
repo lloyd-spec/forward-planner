@@ -61,7 +61,7 @@ RULES: only include events with a confirmed, specific date you found on a real p
     }]
   }, { signal: ac.signal });
   } finally { clearTimeout(timer); }
-  const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("");
+  const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("").replace(/<\/?cite\b[^>]*>/gi, ""); // web-search cite markup is noise here
   const s = text.indexOf("["), e = text.lastIndexOf("]");
   if (s === -1 || e === -1) return [];
   try {

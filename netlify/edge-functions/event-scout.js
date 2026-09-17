@@ -185,7 +185,7 @@ Return ONLY a valid JSON array (no preamble, no fences) of 0 to 10 items:
 RULES: "date" is the START date. "duration" is the length in days (1 for a single day, 7 for a week, 14 for a fortnight-long tournament, 25 for the Fringe); always include it. Only include events where you found a specific confirmed date on a real page, and "source" must be that page's URL. British English. No em dashes. An empty array is a fine answer.`
         }]
       }, { signal: ac.signal });
-      const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("");
+      const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("").replace(/<\/?cite\b[^>]*>/gi, "");
       const s = text.indexOf("["), e = text.lastIndexOf("]");
       if (s === -1 || e === -1) continue;
       const items = JSON.parse(text.slice(s, e + 1));
