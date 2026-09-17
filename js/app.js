@@ -690,8 +690,8 @@ const IDEA_JACKER_URL = 'https://ideajacker.netlify.app/';
 // (in the URL fragment, which never reaches a server) and the Idea Jacker
 // opens already unlocked in the new tab - the same as the suite homepage
 // and the News Jacker do. The key is not written into the page's HTML.
-function ideaJackerButtons(seed) {
-  return '<a class="ij-open" href="' + escapeHtml(IDEA_JACKER_URL) + '" data-seed="' + escapeHtml(seed) + '" target="_blank" rel="noopener">Develop in Idea Jacker →</a>' +
+function ideaJackerButtons(seed, clientName) {
+  return '<a class="ij-open" href="' + escapeHtml(IDEA_JACKER_URL) + '" data-seed="' + escapeHtml(seed) + '" data-client="' + escapeHtml(clientName || '') + '" target="_blank" rel="noopener">Develop in Idea Jacker →</a>' +
          '<button class="copy-seed" data-seed="' + escapeHtml(seed) + '">Copy</button>';
 }
 
@@ -757,7 +757,7 @@ function renderBriefing(b) {
               <div class="idea-card-top">
                 <span class="idea-client">${escapeHtml(m.client)}</span>
                 ${m.idea ? `<span class="idea-name" style="color:${accent}">${escapeHtml(m.idea)}</span>` : ''}
-                ${ideaJackerButtons(seedTextFor(it.event, m, it))}
+                ${ideaJackerButtons(seedTextFor(it.event, m, it), m.client)}
               </div>
               <div class="idea-concept">${escapeHtml(m.concept || m.angle || '')}</div>
               ${m.headline ? `<div class="idea-headline">“${escapeHtml(m.headline)}”</div>` : ''}
@@ -847,7 +847,8 @@ document.addEventListener('click', (e) => {
   if (!link) return;
   e.preventDefault();
   const seed = link.dataset.seed || '';
-  const frag = '#k=' + encodeURIComponent(suiteKey || '') + '&seed=' + encodeURIComponent(seed);
+  const client = link.dataset.client || '';
+  const frag = '#k=' + encodeURIComponent(suiteKey || '') + (client ? '&client=' + encodeURIComponent(client) : '') + '&seed=' + encodeURIComponent(seed);
   window.open(IDEA_JACKER_URL + frag, '_blank', 'noopener');
 });
 
@@ -929,7 +930,7 @@ async function runIdeation(ev) {
               <div class="idea-card-top">
                 <span class="idea-client">${escapeHtml(m.client)}</span>
                 ${m.idea ? `<span class="idea-name" style="color:var(--teal-darker)">${escapeHtml(m.idea)}</span>` : ''}
-                ${ideaJackerButtons(seedTextFor(ev.event, m))}
+                ${ideaJackerButtons(seedTextFor(ev.event, m), m.client)}
               </div>
               <div class="idea-concept">${escapeHtml(m.concept || '')}</div>
               ${m.headline ? `<div class="idea-headline">\u201C${escapeHtml(m.headline)}\u201D</div>` : ''}

@@ -1,5 +1,7 @@
 # Update - 12 September 2026
 
+- 17 Sep: "Develop in Idea Jacker" also passes the client name, so the Idea Jacker opens with that brand pre-selected.
+
 - 17 Sep: "Develop in Idea Jacker" now carries the suite key in the link fragment, so the Idea Jacker opens already unlocked in the new tab instead of stopping at its password screen. The key is added at click time and never written into the page.
 
 - 17 Sep (after a live "network error" during "Searching the web for freshly announced dates"): the keep-alive heartbeat only ran during the compose step, so the live web search and the registry lookups before it could sit silent for a minute or more and the connection was cut. The heartbeat now runs for the whole briefing from the first second. The live search is also time-boxed at 90 seconds (the run carries on with the curated calendar if it overruns) and gets the same effort cap as the composer on Opus-5-class and Fable models. Page version v17.
