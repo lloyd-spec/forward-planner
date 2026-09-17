@@ -1,8 +1,8 @@
-// /api/data — the hatch the web page and the other suite tools talk to.
-// GET  ?store=events|clients|settings|archive|event-status|media-opps → read (password protected)
-// GET  ?store=briefing&id=2026-06-15                   → read one briefing
-// GET  ?store=master-roster                            → the seed client list bundled with the deploy
-// PUT  ?store=events|clients|settings|event-status|media-opps (body = JSON) → save (password protected)
+// /api/data - the hatch the web page and the other suite tools talk to.
+// GET  ?store=events|clients|settings|archive|event-status|media-opps -> read (password protected)
+// GET  ?store=briefing&id=2026-06-15                   -> read one briefing
+// GET  ?store=master-roster                            -> the seed client list bundled with the deploy
+// PUT  ?store=events|clients|settings|event-status|media-opps (body = JSON) -> save (password protected)
 //
 // The News Jacker and Idea Jacker fetch ?store=clients so the whole
 // suite shares one roster. Their domains are allowed via CORS below.

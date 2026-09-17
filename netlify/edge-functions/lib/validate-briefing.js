@@ -12,10 +12,22 @@ function nameMatch(a, b) {
   return a === b || a.includes(b) || b.includes(a);
 }
 
-function findSource(eventName, sources) {
-  const n = normName(eventName);
+// Matching order, for both events and clients: an exact normalised-name
+// match wins outright. Only when nothing matches exactly do we fall back
+// to the looser substring match, and then only if exactly ONE candidate
+// fits. Two candidates ("Care Home Awards" and "Care Home Open Week" for
+// "Care Home") means we cannot tell which the composer meant, so the item
+// is treated as unverifiable rather than attached to the wrong one.
+function resolveByName(n, candidates, normOf) {
   if (!n) return null;
-  return sources.find(s => nameMatch(n, s._norm)) || null;
+  const exact = candidates.find(c => normOf(c) === n);
+  if (exact) return exact;
+  const partial = candidates.filter(c => nameMatch(n, normOf(c)));
+  return partial.length === 1 ? partial[0] : null;
+}
+
+function findSource(eventName, sources) {
+  return resolveByName(normName(eventName), sources, s => s._norm);
 }
 
 // sources: array of { event, niceDate, daysOut, statusKey, kind } where
@@ -24,12 +36,10 @@ export function validateComposed(composed, sources, longLeadCandidates, clients)
   const report = { droppedItems: [], droppedMatches: 0, droppedPriorities: 0, droppedQuiet: 0, droppedLongLead: 0 };
   const srcs = sources.map(s => ({ ...s, _norm: normName(s.event) }));
   const llSrcs = (longLeadCandidates || []).map(s => ({ ...s, _norm: normName(s.event) }));
-  const rosterNorms = new Map(clients.map(c => [normName(c.name), c.name]));
+  const roster = clients.map(c => ({ name: c.name, _norm: normName(c.name) }));
   const findClient = (name) => {
-    const n = normName(name);
-    if (rosterNorms.has(n)) return rosterNorms.get(n);
-    for (const [k, v] of rosterNorms) if (nameMatch(n, k)) return v;
-    return null;
+    const hit = resolveByName(normName(name), roster, c => c._norm);
+    return hit ? hit.name : null;
   };
 
   const usedSources = new Set();

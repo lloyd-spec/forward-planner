@@ -1,3 +1,78 @@
+# Update - 12 September 2026
+
+- Post-review correction (13 Sep): a stale link key no longer locks out someone already verified this session; registry client matching ignores dash style and spacing.
+
+## What changed
+
+- Calendar tab: events the Event Scout found and you approved were saved
+  but never shown. A sixth filter chip, "Scout-verified", now lists them
+  with a count, each row carries a SCOUT tag and a link to its evidence
+  page, and the add/edit form's provenance menu offers the same option.
+- Editing any event now keeps the fields the form does not show (source,
+  verified date, moveable flag) instead of silently dropping them.
+- Date rules are checked for real dates, not just the right shape: month
+  00 or 13, day 00 or 32, 31 February, 30 February, 31 April and 29
+  February in a non-leap year are refused (a recurring 02-29 is allowed;
+  it falls on leap years). Floating rules must use 1-5 or "last", a real
+  weekday and a real month. The form's live preview says so as you type.
+- Briefing validation matches items to events and clients by exact name
+  first. The looser "contains" match is used only when exactly one
+  candidate fits, so "Wimbledon" no longer attaches to "Wimbledon
+  Qualifying" and "DK Household Brands" no longer picks one of the two DK
+  clients at random. Ambiguous items are dropped and reported in the run
+  log, as invented ones already were.
+- The scheduled Monday briefing and monthly Scout sweep now send
+  CRON_SECRET in an x-cron-secret header rather than in the URL, so it
+  stays out of access logs. The old ?key= form still works for this one
+  release for safety; it is marked for removal in the next update.
+- Event Scout: each of the two web-search passes is cut off after two
+  minutes instead of hanging the whole request. If a pass times out,
+  whatever the other pass found is still queued and the Calendar tab
+  says the sweep timed out and can be run again. A finished sweep also
+  now says how many proposals it queued.
+- The scout review queue has proper styling (it had none).
+- Settings tab: new "Briefing window (days)" box, default 56, accepting
+  14 to 120. Previously this could only be changed by editing the stored
+  settings by hand. The engine clamps to the same range.
+- Password gate: a network error while checking the password no longer
+  unlocks the app on trust. It shows "Could not reach the server - try
+  again". Only a 200 from the server unlocks. Keys arriving in links from
+  the suite homepage (#k=) are now verified the same way before they are
+  stored; a bad key shows the gate.
+- House style: em and en dashes in the seed calendar and seed client
+  roster (for example "DK Household Brands - Cole & Mason") and in page
+  copy are now spaced hyphens. Numeric ranges such as "6-8 weeks" use a
+  bare hyphen, as the house style allows. No URL, regex or date rule was
+  touched.
+- providers.js pointed at a file called UPGRADE-NOTES that does not
+  exist; it now points at this file.
+
+## To do on Netlify
+
+- Nothing new. CRON_SECRET, SUITE_PASSWORD and the provider keys are
+  unchanged. Deploy and it works.
+
+## Not done, deliberately
+
+- The client roster was NOT repointed at Supabase; it still lives in
+  Netlify Blobs with the seed list as fallback.
+- Client records already saved in Blobs keep whatever dash they were
+  saved with. The seed change affects fresh deploys and the "Add missing
+  clients" master list only. Name matching already ignores punctuation,
+  so briefings are unaffected either way; rename in the Clients tab if
+  you want the stored spelling to match.
+- The two-minute timeout was added to the Event Scout's searches as
+  asked. The Monday briefing's own live search was left as it is (it
+  already fails over gracefully).
+
+## Tests
+
+`node tests/run-tests.mjs` now runs 72 checks (was 29): impossible
+dates, the briefing-window clamp, exact-before-substring source and
+client matching, and the cron secret header/query handling.
+
+---
+
 # Forward Planner update - August 2026
 
 ## The big change: the briefing now plans backwards

@@ -1,13 +1,14 @@
-// /api/run — the Forward Planner engine.
+// /api/run - the Forward Planner engine.
 // Triggered two ways:
-//   1. The Netlify Monday schedule:  GET /api/run?key=CRON_SECRET&email=1
+//   1. The Netlify Monday schedule:  GET /api/run?email=1  (x-cron-secret header;
+//      the older ?key=CRON_SECRET query form still works for one release)
 //   2. The web page's Run button:    POST /api/run  (x-password header)
 //
-// Pipeline: load calendar + clients + statuses + media deadlines → compute
-// the main window and the long-lead horizon → (optional) live web search for
-// freshly announced dated events (evidence URL required) → the provider chain
-// composes the briefing, planning BACKWARDS from the PR deadline → the code
-// validates every fact against the source data → email via Resend → archive.
+// Pipeline: load calendar + clients + statuses + media deadlines -> compute
+// the main window and the long-lead horizon -> (optional) live web search for
+// freshly announced dated events (evidence URL required) -> the provider chain
+// composes the briefing, planning BACKWARDS from the PR deadline -> the code
+// validates every fact against the source data -> email via Resend -> archive.
 // Progress streams back as NDJSON lines so the run can take as long as it needs.
 //
 // The composer's job is judgement and writing. The code enforces the facts:
@@ -16,8 +17,9 @@
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.39.0";
 import { getEvents, getClients, getSettings, saveBriefing, readJSON } from "./lib/storage.js";
 import { generateWithFallback, providerKeys } from "./lib/providers.js";
-import { computeWindow, computeLongLead, statusKeyFor, normName, fmtDate } from "./lib/dates.js";
+import { computeWindow, computeLongLead, statusKeyFor, normName, fmtDate, clampWindowDays } from "./lib/dates.js";
 import { validateComposed } from "./lib/validate-briefing.js";
+import { isCronRequest } from "./lib/cron-auth.js";
 import { fetchRegistryClients, profileToPromptBlock, fetchClientContext, contextToPromptBlock } from "./lib/clients-registry.js";
 
 const PASSWORD = Netlify.env.get("SUITE_PASSWORD") || crypto.randomUUID() /* no SUITE_PASSWORD env var: gate fails closed - set it in Netlify */;
@@ -147,7 +149,7 @@ ${focusNames ? `FOCUSED PLAN RUN. This briefing is being built for ${focusNames.
 
 ` : ""}YOUR JOB:
 1. USE ONLY THE EVENTS, DEADLINES AND FRESH FINDS SUPPLIED ABOVE. Never add events from your own knowledge and never adjust a date. If you believe a significant UK moment in this window is missing from everything supplied, name it in "gaps" (bare name plus one clause on why it matters) so the Event Scout can verify it. Gaps get no worked-up ideas.
-2. PROVENANCE HIERARCHY. OFFICIAL (UN, WHO, government), CHARITY, CULTURAL, INDUSTRY (sector bodies; the care and hospitality weeks here are first-class for this roster) and COMMERCIAL (brand-invented or internet-origin days). COMMERCIAL days may ONLY appear as social-first ideas, never lead a section and never crowd out a stronger moment; one or two per briefing at most.
+2. PROVENANCE HIERARCHY. OFFICIAL (UN, WHO, government), CHARITY, CULTURAL, INDUSTRY (sector bodies; the care and hospitality weeks here are first-class for this roster) and COMMERCIAL (brand-invented or internet-origin days). SCOUT marks an event the Event Scout found on the live web and a human approved with a source link; treat it by its category, as you would an OFFICIAL or CULTURAL entry. COMMERCIAL days may ONLY appear as social-first ideas, never lead a section and never crowd out a stronger moment; one or two per briefing at most.
 3. Pick the events with genuine client fit. Quality over coverage: a sharp briefing of 12-16 events beats a phone book. Skip events with no honest match. Ongoing months and weeks are live opportunities, not missed ones; suggest the mid-period moment that still works.
 4. Events tagged [ALREADY PURSUING] are in hand. Give them at most ONE short entry: "concept" is a single-sentence status nudge naming the next step, no fresh campaign, no new ideas.
 5. For each chosen event provide:
@@ -366,9 +368,10 @@ async function sendEmail(resendKey, settings, subject, html) {
 
 export default async function handler(request) {
   const url = new URL(request.url);
-  const cronKey = url.searchParams.get("key") || "";
-  const cronSecret = Netlify.env.get("CRON_SECRET") || "";
-  const isCron = cronSecret && cronKey === cronSecret;
+  // The scheduled function sends CRON_SECRET in the x-cron-secret header.
+  // The query-string ?key= form is honoured for one more release (see
+  // lib/cron-auth.js) so nothing breaks mid-rollout.
+  const isCron = isCronRequest(request, Netlify.env.get("CRON_SECRET") || "");
   const isUser = request.headers.get("x-password") === PASSWORD;
 
   if (!isCron && !isUser) {
@@ -419,7 +422,9 @@ export default async function handler(request) {
         if (settings.includeCommercial === false) {
           allEvents = events.filter(e => e.provenance !== "commercial");
         }
-        const windowDays = settings.windowDays || 56;
+        // Settings tab exposes this (14-120 days); clamp again here in case
+        // the blob was edited by hand.
+        const windowDays = clampWindowDays(settings.windowDays);
         let windowEvents = computeWindow(allEvents, windowDays);
 
         // Institutional memory: occurrences the team has already decided on.

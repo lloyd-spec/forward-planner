@@ -116,7 +116,7 @@ body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 
 .edit-form .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .edit-form .full { grid-column: 1 / -1; }
 .form-label { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--navy); margin: 10px 0 4px; }
-.edit-form input[type="text"], .edit-form textarea, .settings-card input[type="text"] { width: 100%; padding: 9px 12px; font-size: 13px; font-family: inherit; background: var(--cream); border: 0.5px solid var(--border-strong); border-radius: 8px; color: var(--navy-text); resize: vertical; }
+.edit-form input[type="text"], .edit-form textarea, .settings-card input[type="text"], .settings-card input[type="number"] { width: 100%; padding: 9px 12px; font-size: 13px; font-family: inherit; background: var(--cream); border: 0.5px solid var(--border-strong); border-radius: 8px; color: var(--navy-text); resize: vertical; }
 .edit-form input:focus, .edit-form textarea:focus, .settings-card input:focus { outline: none; border-color: var(--teal-dark); background: white; }
 .form-buttons { display: flex; gap: 10px; margin-top: 14px; align-items: center; }
 .check-inline { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
@@ -260,6 +260,18 @@ body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 
 .long-lead-row { font-size: 13.5px; color: var(--navy); padding: 6px 0; line-height: 1.5; }
 .long-lead-row + .long-lead-row { border-top: 1px solid var(--border); }
 
+/* Event scout review queue */
+.scout-queue { margin-bottom: 14px; }
+.scout-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--navy); background: var(--teal-soft); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+.scout-bar button { padding: 7px 12px; font-size: 12.5px; font-weight: 600; font-family: inherit; background: var(--card); color: var(--navy); border: 0.5px solid var(--border-strong); border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.scout-bar button:disabled { opacity: 0.6; cursor: default; }
+.scout-bar.scout-notice { background: var(--amber-bg); color: var(--amber-text); }
+.scout-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13.5px; background: var(--card); border: 0.5px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 6px; }
+.scout-card .chip { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.07em; padding: 2px 6px; border-radius: 4px; background: var(--teal-soft); color: var(--teal-darker); margin-left: 4px; vertical-align: 1px; }
+.scout-card .sc-meta { font-size: 12.5px; color: var(--navy-muted); margin-top: 3px; line-height: 1.5; }
+.scout-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.scout-actions button { padding: 6px 11px; font-size: 12.5px; font-weight: 600; font-family: inherit; background: var(--card); color: var(--navy); border: 0.5px solid var(--border-strong); border-radius: 8px; cursor: pointer; }
+.scout-actions button.approve { background: var(--teal-darker); color: #fff; border-color: var(--teal-darker); }
 /* Scout date-update proposals */
 .scout-card.scout-update { border-left: 3px solid var(--amber); }
 

@@ -42,7 +42,7 @@ export const SEED_EVENTS = [
     "date": "01-27",
     "event": "Holocaust Memorial Day",
     "category": "Awareness",
-    "description": "UK day of remembrance. Sensitive — comment only with substance.",
+    "description": "UK day of remembrance. Sensitive - comment only with substance.",
     "relevantFor": "Charity, education, museums (handle with extreme care)",
     "notes": "Only react if client has genuine, substantive contribution",
     "provenance": "official"
@@ -125,8 +125,8 @@ export const SEED_EVENTS = [
     "date": "03-08",
     "event": "International Women's Day",
     "category": "Awareness",
-    "description": "Global. Very crowded — needs strong angle.",
-    "relevantFor": "Most B2B and B2C — but cynical media scrutiny",
+    "description": "Global. Very crowded - needs strong angle.",
+    "relevantFor": "Most B2B and B2C - but cynical media scrutiny",
     "notes": "Substantive D&I commitments, female leader features, avoid pinkwashing",
     "provenance": "official"
   },
@@ -294,7 +294,7 @@ export const SEED_EVENTS = [
     "category": "Awareness",
     "description": "Global LGBT+ celebration month.",
     "relevantFor": "Brands with genuine D&I work, hospitality, retail",
-    "notes": "Substance over rainbow logos — media is critical",
+    "notes": "Substance over rainbow logos - media is critical",
     "duration": 30,
     "provenance": "cultural"
   },
@@ -396,7 +396,7 @@ export const SEED_EVENTS = [
     "date": "07-15",
     "event": "St Swithin's Day",
     "category": "Cultural",
-    "description": "UK weather folklore — 40 days of rain or sun.",
+    "description": "UK weather folklore - 40 days of rain or sun.",
     "relevantFor": "Hospitality, tourism, retail, gardening",
     "notes": "Weather-themed content, light folklore",
     "provenance": "cultural"
@@ -554,7 +554,7 @@ export const SEED_EVENTS = [
     "category": "Awareness",
     "description": "UK month-long observance.",
     "relevantFor": "Employers with genuine D&I, education, charity, arts",
-    "notes": "Authentic stories, not tokenism — media is critical",
+    "notes": "Authentic stories, not tokenism - media is critical",
     "duration": 31,
     "provenance": "cultural"
   },
@@ -580,7 +580,7 @@ export const SEED_EVENTS = [
     "date": "10-10",
     "event": "World Mental Health Day",
     "category": "Awareness",
-    "description": "Major global day. Crowded — needs substance.",
+    "description": "Major global day. Crowded - needs substance.",
     "relevantFor": "Mental health, HR, healthcare, all employers",
     "notes": "Workplace initiatives, expert commentary, real stories",
     "provenance": "official"
@@ -626,7 +626,7 @@ export const SEED_EVENTS = [
     "event": "Remembrance Day / Armistice",
     "category": "Cultural",
     "description": "UK day of remembrance. Sensitive.",
-    "relevantFor": "Charity (forces), employers — handle with care",
+    "relevantFor": "Charity (forces), employers - handle with care",
     "notes": "Two-minute silence observance, only substantive contributions",
     "provenance": "official"
   },
@@ -699,7 +699,7 @@ export const SEED_EVENTS = [
     "category": "Awareness",
     "description": "UN day.",
     "relevantFor": "Healthcare, charity, LGBT+ brands, employers",
-    "notes": "Substantive — not lip service",
+    "notes": "Substantive - not lip service",
     "provenance": "official"
   },
   {
@@ -1899,7 +1899,7 @@ export const SEED_EVENTS = [
 export const SEED_CLIENTS = [
   {
     "name": "Autumna",
-    "industry": "Care transparency platform — UK",
+    "industry": "Care transparency platform - UK",
     "location": "UK",
     "website": "",
     "description": "Care home comparison and transparency platform including OpenScore ratings.",
@@ -1913,7 +1913,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Church Farm Care",
-    "industry": "Care homes — Nottinghamshire",
+    "industry": "Care homes - Nottinghamshire",
     "location": "Nottinghamshire",
     "website": "",
     "description": "Care home provider offering residential and nursing care.",
@@ -1927,7 +1927,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Cinnamon Care",
-    "industry": "Premium care homes — UK",
+    "industry": "Premium care homes - UK",
     "location": "UK",
     "website": "",
     "description": "Care home group providing premium residential, nursing and dementia care across the UK.",
@@ -1941,7 +1941,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Clearstone Care",
-    "industry": "Care home group — UK",
+    "industry": "Care home group - UK",
     "location": "UK",
     "website": "",
     "description": "Care home group providing residential and nursing care.",
@@ -1955,7 +1955,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "CoolCare",
-    "industry": "Care management software — UK",
+    "industry": "Care management software - UK",
     "location": "UK",
     "website": "",
     "description": "Occupancy and business management software for care homes.",
@@ -1969,7 +1969,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Coxbench Hall",
-    "industry": "Care home — Derbyshire",
+    "industry": "Care home - Derbyshire",
     "location": "Derbyshire",
     "website": "",
     "description": "Care home providing residential care in a historic setting.",
@@ -1982,8 +1982,8 @@ export const SEED_CLIENTS = [
     "active": true
   },
   {
-    "name": "DK Household Brands — Cole & Mason",
-    "industry": "Consumer kitchenware — UK",
+    "name": "DK Household Brands - Cole & Mason",
+    "industry": "Consumer kitchenware - UK",
     "location": "UK",
     "website": "",
     "description": "Premium salt and pepper mills and seasoning brand.",
@@ -1996,8 +1996,8 @@ export const SEED_CLIENTS = [
     "active": true
   },
   {
-    "name": "DK Household Brands — Zyliss",
-    "industry": "Consumer kitchenware — UK",
+    "name": "DK Household Brands - Zyliss",
+    "industry": "Consumer kitchenware - UK",
     "location": "UK",
     "website": "",
     "description": "Kitchen gadgets and cookware brand.",
@@ -2011,7 +2011,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "everyLIFE",
-    "industry": "Digital care planning — UK",
+    "industry": "Digital care planning - UK",
     "location": "UK",
     "website": "",
     "description": "Digital care planning and records platform for care providers.",
@@ -2025,7 +2025,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Headlam Hall + Rose & Crown",
-    "industry": "Hospitality — County Durham",
+    "industry": "Hospitality - County Durham",
     "location": "County Durham",
     "website": "",
     "description": "Country house hotel and spa with associated gastropub in the North East.",
@@ -2039,7 +2039,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Horwood House",
-    "industry": "Hospitality — Buckinghamshire",
+    "industry": "Hospitality - Buckinghamshire",
     "location": "Buckinghamshire",
     "website": "",
     "description": "Country house hotel, spa and events venue.",
@@ -2053,12 +2053,12 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "HOSPA & HMA",
-    "industry": "Hospitality association — UK",
+    "industry": "Hospitality association - UK",
     "location": "UK",
     "website": "",
     "description": "Hospitality professionals association covering finance, revenue management and IT.",
     "topics": "hotel revenue management, hospitality finance, hotel technology, hospitality KPIs, benchmarking, industry data",
-    "tone": "Progressive industry voice – energetic, champions young talent",
+    "tone": "Progressive industry voice - energetic, champions young talent",
     "avoid": "",
     "budget": "",
     "briefing": "",
@@ -2067,7 +2067,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Kensington Hideaway",
-    "industry": "Boutique hospitality — London",
+    "industry": "Boutique hospitality - London",
     "location": "London",
     "website": "",
     "description": "Boutique luxury accommodation in Kensington, London.",
@@ -2081,7 +2081,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Macc Care Group",
-    "industry": "Care homes — Cheshire",
+    "industry": "Care homes - Cheshire",
     "location": "Macclesfield, Cheshire",
     "website": "",
     "description": "Care home group providing residential and nursing care in Cheshire.",
@@ -2095,7 +2095,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Midhurst Jazz Food & Blues Festival",
-    "industry": "Events — West Sussex",
+    "industry": "Events - West Sussex",
     "location": "Midhurst, West Sussex",
     "website": "",
     "description": "Annual jazz, food and blues festival.",
@@ -2109,7 +2109,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Milford Care",
-    "industry": "Care homes — UK",
+    "industry": "Care homes - UK",
     "location": "UK",
     "website": "",
     "description": "Care home operator providing residential and nursing care.",
@@ -2123,7 +2123,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Murrayshall",
-    "industry": "Hospitality & golf — Perthshire",
+    "industry": "Hospitality & golf - Perthshire",
     "location": "Perthshire, Scotland",
     "website": "",
     "description": "Country house hotel and golf estate in Scotland.",
@@ -2137,7 +2137,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Nellsar",
-    "industry": "Care home group — South East",
+    "industry": "Care home group - South East",
     "location": "South East England",
     "website": "",
     "description": "Care home group operating residential and nursing homes across the South East.",
@@ -2151,7 +2151,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Net Affinity",
-    "industry": "Hospitality technology — Ireland/UK",
+    "industry": "Hospitality technology - Ireland/UK",
     "location": "Ireland / UK",
     "website": "",
     "description": "Hotel booking technology and direct booking solutions.",
@@ -2165,7 +2165,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Orchardleigh",
-    "industry": "Events estate — Somerset",
+    "industry": "Events estate - Somerset",
     "location": "Somerset",
     "website": "",
     "description": "Estate venue for weddings, events and luxury stays.",
@@ -2179,7 +2179,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "OSS Systems",
-    "industry": "Hospitality technology — UK",
+    "industry": "Hospitality technology - UK",
     "location": "UK",
     "website": "",
     "description": "Technology solutions for hospitality and leisure businesses.",
@@ -2193,7 +2193,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Park View Gloucester",
-    "industry": "Care home — Gloucester",
+    "industry": "Care home - Gloucester",
     "location": "Gloucester",
     "website": "",
     "description": "Care home providing residential and nursing care.",
@@ -2221,7 +2221,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "RAW Charging",
-    "industry": "EV charging — UK",
+    "industry": "EV charging - UK",
     "location": "UK",
     "website": "",
     "description": "Electric vehicle charging network and infrastructure provider.",
@@ -2235,12 +2235,12 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Sona (Care)",
-    "industry": "Care workforce tech — UK",
+    "industry": "Care workforce tech - UK",
     "location": "UK",
     "website": "",
     "description": "Workforce management technology for the care sector.",
     "topics": "care staff scheduling, retention, social care workforce, care technology, staff wellbeing, agency costs",
-    "tone": "Human-first care tech – emotive, stat-backed, never guilt-tripping",
+    "tone": "Human-first care tech - emotive, stat-backed, never guilt-tripping",
     "avoid": "Shaming care managers about inefficiency",
     "budget": "",
     "briefing": "",
@@ -2249,12 +2249,12 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "The Wesley",
-    "industry": "Hospitality & conferencing — London",
+    "industry": "Hospitality & conferencing - London",
     "location": "London",
     "website": "",
     "description": "Hotel and conference venue in London.",
     "topics": "London hotels, conference venues, business travel, event spaces, corporate hospitality",
-    "tone": "Purposeful and warm – ethical hotel with social justice roots",
+    "tone": "Purposeful and warm - ethical hotel with social justice roots",
     "avoid": "",
     "budget": "",
     "briefing": "",
@@ -2263,13 +2263,13 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Venelle",
-    "industry": "Luxury home care — UK",
+    "industry": "Luxury home care - UK",
     "location": "UK",
     "website": "",
     "description": "Luxury home care and domiciliary care provider.",
     "topics": "luxury home care, private care, elderly care at home, premium care, private nursing, high-net-worth",
-    "tone": "Premium, stylish, witty – concierge polish with a playful streak",
-    "avoid": "Direct client profiling, naming or interviews – privacy-led, stories via PAs only",
+    "tone": "Premium, stylish, witty - concierge polish with a playful streak",
+    "avoid": "Direct client profiling, naming or interviews - privacy-led, stories via PAs only",
     "budget": "",
     "briefing": "",
     "prospect": false,
@@ -2277,7 +2277,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "Wellbeing Care",
-    "industry": "Care provider — UK",
+    "industry": "Care provider - UK",
     "location": "UK",
     "website": "",
     "description": "Care provider focused on wellbeing-led care services.",
@@ -2291,7 +2291,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "WellChild",
-    "industry": "Children's charity — UK",
+    "industry": "Children's charity - UK",
     "location": "UK",
     "website": "",
     "description": "National charity for seriously ill children helping them get the best care.",
@@ -2305,7 +2305,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "White Ribbon UK",
-    "industry": "Charity — UK",
+    "industry": "Charity - UK",
     "location": "UK",
     "website": "",
     "description": "Charity working to end male violence against women through education and campaigning.",
@@ -2319,7 +2319,7 @@ export const SEED_CLIENTS = [
   },
   {
     "name": "You & I Care",
-    "industry": "Home care — UK",
+    "industry": "Home care - UK",
     "location": "UK",
     "website": "",
     "description": "Home care and domiciliary care provider.",

@@ -1,4 +1,4 @@
-// Shared storage helpers — a thin wrapper around Netlify Blobs.
+// Shared storage helpers - a thin wrapper around Netlify Blobs.
 // Blobs is Netlify's built-in key-value storage: one shared copy of the
 // data for the whole team, readable and writable from these functions.
 // If the store is empty (first ever run) we fall back to the seed data

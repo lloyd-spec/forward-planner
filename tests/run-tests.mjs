@@ -3,8 +3,9 @@
 // No framework, no dependencies: each check prints PASS or FAIL and the
 // process exits non-zero if anything failed.
 
-import { resolveEvent, isValidDateRule, computeWindow, computeLongLead, statusKeyFor, normName } from "../netlify/edge-functions/lib/dates.js";
+import { resolveEvent, isValidDateRule, computeWindow, computeLongLead, statusKeyFor, normName, clampWindowDays } from "../netlify/edge-functions/lib/dates.js";
 import { validateComposed } from "../netlify/edge-functions/lib/validate-briefing.js";
+import { cronKeyFrom, isCronRequest } from "../netlify/edge-functions/lib/cron-auth.js";
 
 let failures = 0;
 function check(name, got, want) {
@@ -21,6 +22,38 @@ check("YYYY-MM-DD is valid", isValidDateRule("2027-06-28"), true);
 check("floating nth is valid", isValidDateRule("3:sun:06"), true);
 check("floating last is valid", isValidDateRule("last:fri:09"), true);
 check("garbage is invalid", isValidDateRule("June 3rd"), false);
+
+// Impossible dates must be rejected, not just the wrong shape
+check("MM-DD month 00 rejected", isValidDateRule("00-10"), false);
+check("MM-DD month 13 rejected", isValidDateRule("13-01"), false);
+check("MM-DD day 00 rejected", isValidDateRule("01-00"), false);
+check("MM-DD day 32 rejected", isValidDateRule("01-32"), false);
+check("MM-DD 31 February rejected", isValidDateRule("02-31"), false);
+check("MM-DD 30 February rejected", isValidDateRule("02-30"), false);
+check("MM-DD 31 April rejected", isValidDateRule("04-31"), false);
+check("MM-DD 29 February allowed (recurring, leap years only)", isValidDateRule("02-29"), true);
+check("MM-DD 31 December allowed", isValidDateRule("12-31"), true);
+check("YYYY-MM-DD month 13 rejected", isValidDateRule("2027-13-01"), false);
+check("YYYY-MM-DD 31 April rejected", isValidDateRule("2027-04-31"), false);
+check("YYYY-MM-DD 29 Feb in a non-leap year rejected", isValidDateRule("2027-02-29"), false);
+check("YYYY-MM-DD 29 Feb in a leap year allowed", isValidDateRule("2028-02-29"), true);
+check("YYYY-MM-DD day 00 rejected", isValidDateRule("2027-06-00"), false);
+check("floating N=0 rejected", isValidDateRule("0:sun:06"), false);
+check("floating N=6 rejected", isValidDateRule("6:sun:06"), false);
+check("floating N=5 allowed", isValidDateRule("5:sat:01"), true);
+check("floating unknown weekday rejected", isValidDateRule("3:xyz:06"), false);
+check("floating month 13 rejected", isValidDateRule("3:sun:13"), false);
+check("floating month 00 rejected", isValidDateRule("last:fri:00"), false);
+check("floating last of December allowed", isValidDateRule("last:mon:12"), true);
+check("floating is case-insensitive", isValidDateRule("LAST:FRI:09"), true);
+
+// ---------- clampWindowDays (Settings tab: briefing window) ----------
+check("window default when unset", clampWindowDays(undefined), 56);
+check("window default when garbage", clampWindowDays("lots"), 56);
+check("window in range kept", clampWindowDays(84), 84);
+check("window numeric string accepted", clampWindowDays("70"), 70);
+check("window clamped to minimum 14", clampWindowDays(3), 14);
+check("window clamped to maximum 120", clampWindowDays(400), 120);
 
 // ---------- resolveEvent ----------
 check("one-off resolves to itself",
@@ -106,6 +139,60 @@ check("priority with unknown client dropped", out.priorities.length, 1);
 check("long-lead entry not in candidates dropped", out.longLead.length, 0);
 check("quiet client with a match dropped", out.quiet.map(q => q.client), ["RAW Charging"]);
 check("non-string gaps filtered", out.gaps, ["World Alzheimer's Month"]);
+
+// ---------- Source tracing: exact name first, substring only when unambiguous ----------
+// The looser source is listed FIRST so the old first-substring-match logic
+// would have attached "Wimbledon" to the qualifying event.
+const overlapSources = [
+  { event: "Wimbledon Qualifying", niceDate: "Mon 21 June", daysOut: 315, statusKey: "wimbledon qualifying|2027", kind: "calendar" },
+  { event: "Wimbledon", niceDate: "Mon 28 June", daysOut: 322, statusKey: "wimbledon|2027", kind: "calendar" },
+  { event: "Care Home Awards", niceDate: "Fri 2 October", daysOut: 53, statusKey: "care home awards|2026", kind: "calendar" },
+  { event: "Care Home Open Week", niceDate: "Mon 5 October", daysOut: 56, statusKey: "care home open week|2026", kind: "calendar" },
+  { event: "National Fitness Day", niceDate: "Wed 23 September", daysOut: 44, statusKey: "national fitness day|2026", kind: "calendar" }
+];
+const overlapClients = [
+  { name: "DK Household Brands - Cole & Mason" },
+  { name: "DK Household Brands - Zyliss" },
+  { name: "Cinnamon Care" }
+];
+const overlapComposed = {
+  intro: "Test",
+  priorities: [],
+  sections: [{ key: "act", title: "Act this week", items: [
+    // exact match must win over the earlier, looser candidate
+    { event: "Wimbledon", matches: [{ client: "Cinnamon Care", concept: "x" }] },
+    // "Care Home" fits two sources: ambiguous, so dropped rather than guessed
+    { event: "Care Home", matches: [{ client: "Cinnamon Care", concept: "x" }] },
+    // "Fitness Day" fits exactly one source: substring fallback still works
+    { event: "Fitness Day", matches: [
+      { client: "Zyliss", concept: "one candidate: resolves to the full roster name" },
+      { client: "DK Household Brands", concept: "two candidates: dropped" },
+      { client: "Cole & Mason", concept: "one candidate: resolves" }
+    ]}
+  ]}],
+  longLead: [], quiet: [], gaps: []
+};
+const { composed: out2, report: report2 } = validateComposed(overlapComposed, overlapSources, [], overlapClients);
+const kept2 = out2.sections[0].items;
+check("exact event name beats an earlier substring candidate", kept2[0].date, "Mon 28 June");
+check("exact match carries its own statusKey", kept2[0].statusKey, "wimbledon|2027");
+check("ambiguous substring event dropped", report2.droppedItems.some(d => d === "Care Home"), true);
+check("single-candidate substring event still matched", kept2[1].date, "Wed 23 September");
+check("single-candidate client resolves to roster spelling",
+  kept2[1].matches.map(m => m.client), ["DK Household Brands - Zyliss", "DK Household Brands - Cole & Mason"]);
+check("ambiguous client name dropped", report2.droppedMatches, 1);
+check("only two items survive", kept2.length, 2);
+
+// ---------- Cron secret: header first, query string for one release ----------
+const mkReq = (url, headers) => new Request(url, { headers: headers || {} });
+check("header secret read", cronKeyFrom(mkReq("https://x.test/api/run?email=1", { "x-cron-secret": "s3" })), "s3");
+check("legacy query secret still read", cronKeyFrom(mkReq("https://x.test/api/run?key=s3&email=1")), "s3");
+check("header wins over query", cronKeyFrom(mkReq("https://x.test/api/run?key=old", { "x-cron-secret": "new" })), "new");
+check("no secret anywhere is empty", cronKeyFrom(mkReq("https://x.test/api/scout")), "");
+check("header authorises", isCronRequest(mkReq("https://x.test/api/scout?run=1", { "x-cron-secret": "s3" }), "s3"), true);
+check("query authorises (compatibility)", isCronRequest(mkReq("https://x.test/api/scout?key=s3&run=1"), "s3"), true);
+check("wrong header refused", isCronRequest(mkReq("https://x.test/api/run", { "x-cron-secret": "nope" }), "s3"), false);
+check("empty CRON_SECRET never authorises", isCronRequest(mkReq("https://x.test/api/run", { "x-cron-secret": "" }), ""), false);
 
 console.log(failures ? "\n" + failures + " failure(s)." : "\nAll tests passed.");
 process.exit(failures ? 1 : 0);

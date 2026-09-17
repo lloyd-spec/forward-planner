@@ -1,9 +1,9 @@
-// Forward Planner — front-end logic.
+// Forward Planner - front-end logic.
 // Data lives server-side in Netlify Blobs (one shared copy for the team);
 // this page reads and writes it through /api/data and runs the engine
 // through /api/run, which streams progress lines as it works.
 
-const FP_VERSION = 'v15';
+const FP_VERSION = 'v16';
 // The password never lives in this file. What you type (or what arrives
 // from the suite homepage via #k=) is held for the session and checked
 // server-side against /api/data?store=verify.
@@ -84,7 +84,11 @@ async function openRunModal() {
 }
 
 let events = [];
-const PROVENANCES = ['official', 'charity', 'cultural', 'industry', 'commercial'];
+// Six provenances. "scout" is stamped on events the Event Scout found and
+// a human approved; each carries the source page that evidences its date.
+const PROVENANCES = ['official', 'charity', 'cultural', 'industry', 'commercial', 'scout'];
+const PROV_LABELS = { official: 'Official', charity: 'Charity', cultural: 'Cultural', industry: 'Industry', commercial: 'Commercial', scout: 'Scout-verified' };
+const provLabel = (p) => PROV_LABELS[p] || (p[0].toUpperCase() + p.slice(1));
 let activeProv = new Set(PROVENANCES);
 let clients = [];
 let settings = {};
@@ -108,43 +112,71 @@ function escapeHtml(s) {
 }
 
 // ============ Gate ============
-async function tryUnlock() {
-  const v = $('#gate-input').value;
-  if (!v) return;
+// Only a 200 from the verify call unlocks the page. A wrong password, an
+// unexpected status or an unreachable server all leave the gate up with a
+// message, so nobody ends up inside an app whose every request then fails.
+async function unlockWithKey(v) {
   const btn = $('#gate-submit');
+  const errEl = $('#gate-error');
   btn.disabled = true;
+  errEl.textContent = '';
   try {
-    const res = await fetch('/api/data?store=verify', { headers: { 'x-password': v } });
+    let res;
+    try {
+      res = await fetch('/api/data?store=verify', { headers: { 'x-password': v } });
+    } catch (e) {
+      errEl.textContent = 'Could not reach the server - try again';
+      return false;
+    }
     if (res.status === 401) {
-      $('#gate-error').textContent = 'Not quite. Try again.';
+      errEl.textContent = 'Not quite. Try again.';
       $('#gate-input').value = '';
-      return;
+      return false;
+    }
+    if (res.status !== 200) {
+      errEl.textContent = 'The server answered ' + res.status + ' - try again in a moment';
+      return false;
     }
     suiteKey = v;
     sessionStorage.setItem('suite_key', v);
     $('#gate').classList.add('hidden');
     init();
-  } catch (e) {
-    // Server unreachable: unlock optimistically, the first load will verify
-    suiteKey = v;
-    sessionStorage.setItem('suite_key', v);
-    $('#gate').classList.add('hidden');
-    init();
+    return true;
   } finally {
     btn.disabled = false;
   }
 }
+async function tryUnlock() {
+  const v = $('#gate-input').value;
+  if (!v) return;
+  await unlockWithKey(v);
+}
 $('#gate-submit').addEventListener('click', tryUnlock);
 $('#gate-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
 // Accept the key passed in links from the Creative Suite homepage
-// (#k= preferred, legacy ?k= still honoured), so one unlock opens all
+// (#k= preferred, legacy ?k= still honoured), so one unlock opens all.
+// The key is stripped from the URL at once and verified server-side
+// before it is stored; a bad or unverifiable key shows the gate as usual.
 const urlKeyMatch = location.hash.match(/k=([^&]+)/) || location.search.match(/[?&]k=([^&]+)/);
 if (urlKeyMatch) {
-  suiteKey = decodeURIComponent(urlKeyMatch[1]);
-  sessionStorage.setItem('suite_key', suiteKey);
+  let linkKey = '';
+  try { linkKey = decodeURIComponent(urlKeyMatch[1]); } catch (e) { linkKey = ''; }
   history.replaceState(null, '', location.pathname + location.hash.replace(/k=[^&]+&?/, '').replace(/#$/, ''));
+  if (linkKey) {
+    $('#gate-input').value = linkKey; // so a retry after a network blip is one click
+    unlockWithKey(linkKey).then((ok) => {
+      // A stale link must not lock out someone already verified this session
+      if (!ok && suiteKey) { $('#gate').classList.add('hidden'); init(); }
+    });
+  } else if (suiteKey) {
+    $('#gate').classList.add('hidden');
+    init();
+  }
+} else if (suiteKey) {
+  // Verified earlier this session
+  $('#gate').classList.add('hidden');
+  init();
 }
-if (suiteKey) { $('#gate').classList.add('hidden'); init(); }
 
 // ============ Tabs ============
 $('#tabs').addEventListener('click', (e) => {
@@ -215,9 +247,28 @@ function displayDate(e) {
   return d;
 }
 
+// Mirrors isValidDateRule in netlify/edge-functions/lib/dates.js: the shape
+// must match AND the date must exist (no month 13, no 31 February, no sixth
+// Sunday). A recurring MM-DD may say 02-29 (it falls on leap years only);
+// a one-off YYYY-MM-DD must exist in that actual year.
+const MAX_DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function isValidMonthDay(month, day, year) {
+  if (month < 1 || month > 12 || day < 1) return false;
+  if (year === undefined) return day <= MAX_DAYS_IN_MONTH[month - 1];
+  const d = new Date(Date.UTC(year, month - 1, day, 12));
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+}
 function isValidDateRule(s) {
   const d = String(s || '').trim();
-  return /^\d{2}-\d{2}$/.test(d) || /^\d{4}-\d{2}-\d{2}$/.test(d) || /^(\d|last):(mon|tue|wed|thu|fri|sat|sun):(\d{2})$/i.test(d);
+  let m;
+  if ((m = /^(\d{2})-(\d{2})$/.exec(d))) return isValidMonthDay(+m[1], +m[2]);
+  if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d))) return isValidMonthDay(+m[2], +m[3], +m[1]);
+  if ((m = /^(\d|last):(mon|tue|wed|thu|fri|sat|sun):(\d{2})$/i.exec(d))) {
+    const nth = m[1].toLowerCase();
+    if (nth !== 'last' && (+nth < 1 || +nth > 5)) return false;
+    return +m[3] >= 1 && +m[3] <= 12;
+  }
+  return false;
 }
 
 // Live preview: as the date field is typed, show how the engine will read it
@@ -231,7 +282,7 @@ document.addEventListener('input', (e) => {
     hint.textContent = 'Reads as: ' + displayDate({ date: v });
     hint.style.color = 'var(--teal-darker)';
   } else {
-    hint.textContent = 'Not a recognised format yet';
+    hint.textContent = 'Not a recognised format yet, or a date that does not exist';
     hint.style.color = 'var(--amber)';
   }
 });
@@ -259,7 +310,7 @@ function renderEvents() {
   const rows = sorted.map(e => `
     <tr>
       <td><strong>${escapeHtml(displayDate(e))}</strong>${(e.duration || 1) > 1 ? '<div class="muted">runs ' + e.duration + ' days</div>' : ''}</td>
-      <td>${escapeHtml(e.event)}<div class="muted hide-mobile">${escapeHtml(e.description)}</div></td>
+      <td>${escapeHtml(e.event)}${e.provenance === 'scout' ? ' <span class="tag" title="Found by the Event Scout and approved by the team">SCOUT</span>' : ''}<div class="muted hide-mobile">${escapeHtml(e.description)}${e.provenance === 'scout' && /^https?:\/\//.test(e.source || '') ? ' <a href="' + escapeHtml(e.source) + '" target="_blank" rel="noopener">source</a>' : ''}</div></td>
       <td class="hide-mobile muted">${escapeHtml(e.category)}</td>
       <td class="row-actions">
         <button class="ideate-link" data-ideate-event="${e._i}">Ideate</button>
@@ -282,7 +333,7 @@ function eventFormHTML(e = {}, index = -1) {
       <div><label class="form-label">Category</label><input type="text" id="ef-category" value="${escapeHtml(e.category || '')}" placeholder="Awareness / Cultural / Sport / Seasonal/Retail / Political/Economic"></div>
       <div><label class="form-label">Typically suits (sectors)</label><input type="text" id="ef-relevant" value="${escapeHtml(e.relevantFor || '')}"></div>
       <div><label class="form-label">Duration in days (1 for a single day, 7 for a week, 30 for a month)</label><input type="text" id="ef-duration" value="${escapeHtml(String(e.duration || 1))}"></div>
-      <div><label class="form-label">Provenance</label><select id="ef-provenance">${PROVENANCES.map(p => `<option value="${p}" ${(e.provenance || 'official') === p ? 'selected' : ''}>${p[0].toUpperCase() + p.slice(1)}</option>`).join('')}</select></div>
+      <div><label class="form-label">Provenance</label><select id="ef-provenance">${PROVENANCES.map(p => `<option value="${p}" ${(e.provenance || 'official') === p ? 'selected' : ''}>${provLabel(p)}</option>`).join('')}</select></div>
       <div class="full"><label class="form-label">Description</label><textarea id="ef-description" rows="2">${escapeHtml(e.description || '')}</textarea></div>
       <div class="full"><label class="form-label">Hook ideas / notes</label><textarea id="ef-notes" rows="2">${escapeHtml(e.notes || '')}</textarea></div>
     </div>
@@ -300,7 +351,7 @@ function renderProvChips() {
   const counts = {};
   for (const e of events) counts[e.provenance || 'official'] = (counts[e.provenance || 'official'] || 0) + 1;
   $('#prov-filters').innerHTML = PROVENANCES.map(p => `
-    <button class="prov-chip ${activeProv.has(p) ? 'on' : ''}" data-prov="${p}">${p[0].toUpperCase() + p.slice(1)} <span>${counts[p] || 0}</span></button>`).join('');
+    <button class="prov-chip ${activeProv.has(p) ? 'on' : ''}" data-prov="${p}">${provLabel(p)} <span>${counts[p] || 0}</span></button>`).join('');
 }
 
 document.addEventListener('click', (e) => {
@@ -342,7 +393,7 @@ function clientFormHTML(c = {}, index = -1) {
       <div><label class="form-label">Location</label><input type="text" id="cf-location" value="${escapeHtml(c.location || '')}"></div>
       <div><label class="form-label">Website</label><input type="text" id="cf-website" value="${escapeHtml(c.website || '')}"></div>
       <div><label class="form-label">Typical budget</label><input type="text" id="cf-budget" value="${escapeHtml(c.budget || '')}"></div>
-      <div class="full"><label class="form-label">Current briefing (what they're pitching right now — feeds all three tools)</label><textarea id="cf-briefing" rows="2">${escapeHtml(c.briefing || '')}</textarea></div>
+      <div class="full"><label class="form-label">Current briefing (what they're pitching right now - feeds all three tools)</label><textarea id="cf-briefing" rows="2">${escapeHtml(c.briefing || '')}</textarea></div>
     </div>
     <div class="form-buttons">
       <label class="check-inline"><input type="checkbox" id="cf-prospect" ${c.prospect ? 'checked' : ''}> New business prospect</label>
@@ -370,6 +421,8 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.saveEvent !== undefined) {
     const i = +t.dataset.saveEvent;
     const ev = {
+      // Keep fields the form does not show (source, verifiedOn, moveable)
+      ...(i === -1 ? {} : events[i]),
       date: $('#ef-date').value.trim(),
       event: $('#ef-event').value.trim(),
       category: $('#ef-category').value.trim(),
@@ -464,20 +517,37 @@ async function persist(name, value, rerender) {
 }
 
 // ============ Settings ============
+// The briefing window (how far ahead each run looks) must sit between a
+// fortnight and four months. The engine clamps to the same range.
+const WINDOW_DAYS_MIN = 14, WINDOW_DAYS_MAX = 120, WINDOW_DAYS_DEFAULT = 56;
+
 function renderSettings() {
   $('#set-recipients').value = (settings.recipients || []).join(', ');
   $('#set-from').value = settings.fromAddress || '';
   $('#set-personal').value = settings.personalEmail || '';
   $('#set-livesearch').checked = settings.liveSearch !== false;
   $('#set-commercial').checked = settings.includeCommercial !== false;
+  const w = parseInt(settings.windowDays, 10);
+  if ($('#set-window')) $('#set-window').value = Number.isFinite(w) ? w : WINDOW_DAYS_DEFAULT;
 }
 
 $('#save-settings-btn').addEventListener('click', async () => {
+  let windowDays = settings.windowDays || WINDOW_DAYS_DEFAULT;
+  if ($('#set-window')) {
+    const raw = $('#set-window').value.trim();
+    windowDays = raw === '' ? WINDOW_DAYS_DEFAULT : parseInt(raw, 10);
+    if (!Number.isInteger(windowDays) || windowDays < WINDOW_DAYS_MIN || windowDays > WINDOW_DAYS_MAX) {
+      alert('Briefing window must be a whole number of days between ' + WINDOW_DAYS_MIN + ' and ' + WINDOW_DAYS_MAX + '.');
+      $('#set-window').focus();
+      return;
+    }
+  }
   settings.recipients = $('#set-recipients').value.split(',').map(s => s.trim()).filter(Boolean);
   settings.fromAddress = $('#set-from').value.trim();
   settings.personalEmail = $('#set-personal').value.trim();
   settings.liveSearch = $('#set-livesearch').checked;
   settings.includeCommercial = $('#set-commercial').checked;
+  settings.windowDays = windowDays;
   try {
     await saveStore('settings', settings);
     $('#settings-saved').textContent = 'Saved.';
@@ -975,6 +1045,10 @@ function showIncomingSeed() {
 // that evidences its date. Approve to add to the calendar (source kept),
 // reject to bin it for good. The queue being empty is the happy state.
 
+// A one-line notice about the last manual sweep (timed out, unreachable,
+// or how many it queued). Kept here so the queue can re-render around it.
+let scoutNotice = '';
+
 async function loadScout() {
   try {
     const res = await fetch('/api/scout', { headers: { 'x-password': suiteKey } });
@@ -987,8 +1061,12 @@ async function loadScout() {
 function renderScout(proposals) {
   const el = document.getElementById('scout-queue');
   if (!el) return;
-  if (!proposals.length) { el.innerHTML = ''; return; }
-  el.innerHTML = '<div class="scout-bar"><span><strong>' + proposals.length +
+  const notice = scoutNotice
+    ? '<div class="scout-bar scout-notice"><span>' + escapeHtml(scoutNotice) + '</span>' +
+      (proposals.length ? '' : '<button onclick="runScout(this)">Run a fresh sweep</button>') + '</div>'
+    : '';
+  if (!proposals.length) { el.innerHTML = notice; return; }
+  el.innerHTML = notice + '<div class="scout-bar"><span><strong>' + proposals.length +
     '</strong> calendar update' + (proposals.length === 1 ? '' : 's') +
     ' found by the event scout - each links its evidence. Approve to add, reject to bin.</span>' +
     '<button onclick="runScout(this)">Run a fresh sweep</button></div>' +
@@ -1032,13 +1110,28 @@ async function scoutAct(id, action) {
 
 async function runScout(btn) {
   btn.disabled = true; btn.textContent = 'Sweeping...';
+  scoutNotice = '';
   try {
-    await fetch('/api/scout', {
+    const res = await fetch('/api/scout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-password': suiteKey },
       body: JSON.stringify({ action: 'run' })
     });
-  } catch (e) {}
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      scoutNotice = 'The sweep could not run (' + (data.error || res.status) + ') - try again.';
+    } else if (data.timedOut) {
+      scoutNotice = 'The sweep timed out before finishing (' + data.timedOut + ' of ' + (data.passes || 2) +
+        ' searches gave up after two minutes). Anything found so far is queued below - run it again to finish.';
+    } else if (data.failed) {
+      scoutNotice = 'Part of the sweep failed (' + data.failed + ' of ' + (data.passes || 2) +
+        ' searches). Anything found is queued below - run it again to finish.';
+    } else {
+      scoutNotice = 'Sweep finished: ' + (data.queued || 0) + ' new proposal' + (data.queued === 1 ? '' : 's') + ' queued.';
+    }
+  } catch (e) {
+    scoutNotice = 'The sweep timed out or the server could not be reached - try again.';
+  }
   btn.disabled = false; btn.textContent = 'Run a fresh sweep';
   loadScout();
 }

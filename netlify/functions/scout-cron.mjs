@@ -3,6 +3,10 @@
 // run its live discovery sweep. Proposals land in the review queue on the
 // Calendar tab - nothing enters the calendar without a human approving it.
 // Env needed: CRON_SECRET (same one the Monday digest uses), URL (automatic).
+//
+// The secret travels in the x-cron-secret header rather than the query
+// string. The scout also still accepts the old ?key= form for one release
+// (see edge-functions/lib/cron-auth.js).
 
 export default async () => {
   const site = process.env.URL;
@@ -12,7 +16,9 @@ export default async () => {
     return new Response("skipped");
   }
   try {
-    const res = await fetch(site + "/api/scout?key=" + encodeURIComponent(secret) + "&run=1");
+    const res = await fetch(site + "/api/scout?run=1", {
+      headers: { "x-cron-secret": secret }
+    });
     console.log("Event scout triggered:", res.status, await res.text());
   } catch (err) {
     console.error("Event scout trigger failed:", err);

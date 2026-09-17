@@ -30,8 +30,11 @@ export async function fetchRegistryClients() {
     return {
       clients: clients,
       byName(name) {
-        const k = String(name || "").trim().toLowerCase();
-        return clients.find((c) => (c.name_key || c.name.toLowerCase()) === k) || null;
+        // Dash- and whitespace-insensitive so "Brand - X" matches a registry
+        // row still spelt "Brand — X" (house style changed the seeds).
+        const norm = (v) => String(v || "").toLowerCase().replace(/[\u2013\u2014]/g, "-").replace(/\s+/g, " ").trim();
+        const k = norm(name);
+        return clients.find((c) => norm(c.name_key || c.name) === k) || null;
       }
     };
   } catch {

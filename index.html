@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=15">
+<link rel="stylesheet" href="css/styles.css?v=16">
 </head>
 <body>
 
@@ -30,7 +30,7 @@
         <span class="masthead-divider"></span>
         <div>
           <div class="masthead-name">Forward Planner</div>
-          <div class="masthead-sub">Own what's coming · 6–8 weeks ahead</div>
+          <div class="masthead-sub">Own what's coming · 6-8 weeks ahead</div>
         </div>
       </div>
       <div class="masthead-actions">
@@ -115,7 +115,10 @@
             <h3>Engine</h3>
             <label class="toggle-row"><input type="checkbox" id="set-livesearch"> Live web search for freshly announced events</label>
             <label class="toggle-row" style="margin-top:10px;"><input type="checkbox" id="set-commercial"> Include commercial and invented days in briefings (social-first only)</label>
-            <p class="hint">Adds 15–30 seconds and a few pence per run. Catches tour dates, fixtures and report publications the curated calendar can't know about.</p>
+            <p class="hint">Adds 15-30 seconds and a few pence per run. Catches tour dates, fixtures and report publications the curated calendar can't know about.</p>
+            <label class="form-label" for="set-window" style="margin-top:14px;">Briefing window (days)</label>
+            <input id="set-window" type="number" min="14" max="120" step="1" inputmode="numeric" style="max-width:120px;">
+            <p class="hint">How far ahead each briefing looks. 56 days (eight weeks) is the default; anything from 14 to 120 is accepted. The long-lead horizon always runs to six months regardless.</p>
           </div>
           <div class="settings-card">
             <h3>Automation (built in)</h3>
@@ -141,6 +144,6 @@
     </div>
   </div>
 
-<script src="js/app.js?v=15"></script>
+<script src="js/app.js?v=16"></script>
 </body>
 </html>

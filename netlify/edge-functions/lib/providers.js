@@ -10,7 +10,7 @@
 //      Anthropic model IDs from the 4.6 generation on are pinned snapshots
 //      (no evergreen "latest" alias exists), so upgrades are deliberate:
 //      when a new model ships, test a few standard prompts against it,
-//      then change the env var. See UPGRADE-NOTES for the routine.
+//      then change the env var. See UPDATE-NOTES.md for the routine.
 //   2. HOUSE STYLE appended automatically to every system prompt from the
 //      shared house-style.js module - one place to edit the Pic voice.
 //   3. The same fallback chain as before: Claude primary, then ChatGPT,

@@ -11,9 +11,45 @@
 
 export const FLOATING_RE = /^(\d|last):(mon|tue|wed|thu|fri|sat|sun):(\d{2})$/i;
 
+// Longest each month can be. A recurring MM-DD rule may say 02-29: it
+// simply falls on leap years only. A one-off YYYY-MM-DD must exist in
+// that actual year, so 2027-02-29 is rejected.
+const MAX_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+function validMonthDay(month, day, year) {
+  if (month < 1 || month > 12 || day < 1) return false;
+  if (year === undefined) return day <= MAX_DAYS[month - 1];
+  const d = new Date(Date.UTC(year, month - 1, day, 12));
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+}
+
+// True only for rules the engine can resolve to a real date: the shape
+// must match AND the parts must be possible (no month 13, no 31 February,
+// no sixth Sunday of a month).
 export function isValidDateRule(s) {
   const d = String(s || "").trim();
-  return /^\d{2}-\d{2}$/.test(d) || /^\d{4}-\d{2}-\d{2}$/.test(d) || FLOATING_RE.test(d);
+  let m;
+  if ((m = /^(\d{2})-(\d{2})$/.exec(d))) return validMonthDay(+m[1], +m[2]);
+  if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d))) return validMonthDay(+m[2], +m[3], +m[1]);
+  if ((m = FLOATING_RE.exec(d))) {
+    const nth = m[1].toLowerCase();
+    if (nth !== "last" && (+nth < 1 || +nth > 5)) return false;
+    const month = +m[3];
+    return month >= 1 && month <= 12;
+  }
+  return false;
+}
+
+// The briefing window must stay sensible: under a fortnight starves the
+// briefing, beyond four months stops being "forward planning". Anything
+// unparseable falls back to the default.
+export const WINDOW_DAYS_MIN = 14;
+export const WINDOW_DAYS_MAX = 120;
+export const WINDOW_DAYS_DEFAULT = 56;
+export function clampWindowDays(value, fallback = WINDOW_DAYS_DEFAULT) {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(WINDOW_DAYS_MAX, Math.max(WINDOW_DAYS_MIN, n));
 }
 
 // Resolve a date rule to its next (or current) occurrence relative to now.

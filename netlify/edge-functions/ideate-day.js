@@ -1,4 +1,4 @@
-// /api/ideate — worked-up ideas for one chosen day, on demand.
+// /api/ideate - worked-up ideas for one chosen day, on demand.
 // POST { event: {...} } with the x-password header. Streams status lines
 // and heartbeats while the ideas are written, then sends the result.
 

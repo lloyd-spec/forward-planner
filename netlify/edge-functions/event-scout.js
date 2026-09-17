@@ -1,4 +1,4 @@
-// /api/scout — the event scout. Keeps the curated calendar fresh without
+// /api/scout - the event scout. Keeps the curated calendar fresh without
 // trusting the internet blindly: a scheduled run searches the live web for
 // new, moved or newly dated events, verifies each against a real source,
 // and files them in a REVIEW QUEUE. Nothing reaches the calendar (and so
@@ -14,7 +14,9 @@
 // festivals, Easter-linked days) self-heal each year.
 //
 // Routes:
-//   GET  /api/scout?key=CRON_SECRET&run=1     - scheduled discovery run
+//   GET  /api/scout?run=1                     - scheduled discovery run (x-cron-secret
+//                                               header; ?key=CRON_SECRET still honoured
+//                                               for one release)
 //   POST /api/scout {action:"run"}            - manual run from the UI (x-password)
 //   GET  /api/scout                           - list pending proposals (x-password)
 //   POST /api/scout {action:"approve", id}    - into the calendar, with source kept
@@ -25,12 +27,17 @@
 
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.39.0";
 import { readJSON, writeJSON, getEvents } from "./lib/storage.js";
-import { resolveEvent, normName } from "./lib/dates.js";
+import { resolveEvent, normName, isValidDateRule } from "./lib/dates.js";
+import { isCronRequest } from "./lib/cron-auth.js";
 
 const PASSWORD = Netlify.env.get("SUITE_PASSWORD") || crypto.randomUUID(); /* fails closed if unset */
 const SEARCH_MODEL = Netlify.env.get("CLAUDE_MODEL_STANDARD") || "claude-sonnet-4-6";
 const PROPOSALS_KEY = "scout-proposals";
 const REJECTED_KEY = "scout-rejected"; // keys we've binned, so they stay binned
+// Each discovery pass is one web-search call. A hung call must fail
+// cleanly rather than pin the whole request open, so every pass is
+// aborted after this long and reported as timed out.
+const PASS_TIMEOUT_MS = 120000;
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
@@ -45,8 +52,8 @@ function rejectionKey(p) {
 
 export default async function handler(request) {
   const url = new URL(request.url);
-  const cronSecret = Netlify.env.get("CRON_SECRET") || "";
-  const isCron = cronSecret && url.searchParams.get("key") === cronSecret;
+  // Header first, legacy ?key= query for one release: see lib/cron-auth.js
+  const isCron = isCronRequest(request, Netlify.env.get("CRON_SECRET") || "");
   const isUser = request.headers.get("x-password") === PASSWORD;
 
   if (!isCron && !isUser) return json({ error: "Wrong password" }, 401);
@@ -157,7 +164,12 @@ ${moveableList ? `PRIORITY: these calendar events are flagged as moveable and mo
   ];
 
   const found = [];
+  let timedOut = 0, failed = 0;
   for (const p of prompts) {
+    // Per-call timeout: abort the search if it has not answered in time.
+    // The SDK surfaces the abort as an error, caught below.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), PASS_TIMEOUT_MS);
     try {
       const resp = await client.messages.create({
         model: SEARCH_MODEL,
@@ -172,14 +184,22 @@ Return ONLY a valid JSON array (no preamble, no fences) of 0 to 10 items:
 
 RULES: "date" is the START date. "duration" is the length in days (1 for a single day, 7 for a week, 14 for a fortnight-long tournament, 25 for the Fringe); always include it. Only include events where you found a specific confirmed date on a real page, and "source" must be that page's URL. British English. No em dashes. An empty array is a fine answer.`
         }]
-      });
+      }, { signal: ac.signal });
       const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("");
       const s = text.indexOf("["), e = text.lastIndexOf("]");
       if (s === -1 || e === -1) continue;
       const items = JSON.parse(text.slice(s, e + 1));
       if (Array.isArray(items)) found.push(...items);
     } catch (err) {
-      console.log("Scout pass failed: " + err.message);
+      if (ac.signal.aborted) {
+        timedOut++;
+        console.log("Scout pass timed out after " + (PASS_TIMEOUT_MS / 1000) + "s");
+      } else {
+        failed++;
+        console.log("Scout pass failed: " + err.message);
+      }
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -192,7 +212,8 @@ RULES: "date" is the START date. "duration" is the length in days (1 for a singl
     const name = String(item.event || "").trim();
     const date = String(item.date || "").trim();
     const source = String(item.source || "").trim();
-    if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    // A real one-off date only: right shape AND a day that exists
+    if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !isValidDateRule(date)) continue;
     if (!/^https?:\/\//.test(source)) continue; // no source, no proposal
     const duration = Math.max(1, parseInt(item.duration, 10) || 1);
     const key = normName(name);
@@ -241,8 +262,14 @@ RULES: "date" is the START date. "duration" is the length in days (1 for a singl
   }
 
   await writeJSON(PROPOSALS_KEY, proposals);
+  // Whatever was found is saved even if a pass timed out; the UI tells the
+  // team the sweep was cut short so they can run it again.
+  const incomplete = timedOut + failed > 0;
   return json({
-    ok: true,
+    ok: !incomplete,
+    timedOut,
+    failed,
+    passes: prompts.length,
     found: found.length,
     queued: queuedNew + queuedUpdates,
     queuedNew,

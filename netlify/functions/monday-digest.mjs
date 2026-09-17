@@ -1,7 +1,7 @@
 // netlify/functions/monday-digest.mjs
 // Fires every Monday at 07:00 UTC and triggers the existing briefing engine
-// with email delivery on - the same entry point the cron-job.org URL used,
-// now self-contained inside Netlify with nothing external to maintain.
+// with email delivery on - self-contained inside Netlify with nothing
+// external to maintain.
 //
 // TIMING (deliberate): Netlify cron runs in UTC only, so 07:00 UTC lands
 // 7am in winter and 8am in summer (BST). Both beat the Monday-morning
@@ -11,6 +11,10 @@
 // Env needed (all existing): CRON_SECRET, RESEND_API_KEY, plus URL which
 // Netlify sets automatically. Recipients come from the planner's own
 // settings store, exactly as before.
+//
+// The secret travels in the x-cron-secret header, not the query string,
+// so it never appears in access logs. The engine also still accepts the
+// old ?key= form for one release (see edge-functions/lib/cron-auth.js).
 //
 // The briefing run does web search and composition and can take a couple of
 // minutes, so this function fires the request and does not wait for the
@@ -25,7 +29,9 @@ export default async () => {
   }
   try {
     // Fire and let the edge function run; a short read confirms it started.
-    const res = await fetch(site + "/api/run?key=" + encodeURIComponent(secret) + "&email=1");
+    const res = await fetch(site + "/api/run?email=1", {
+      headers: { "x-cron-secret": secret }
+    });
     console.log("Monday digest triggered:", res.status);
   } catch (err) {
     console.error("Monday digest trigger failed:", err);
