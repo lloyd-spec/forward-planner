@@ -194,5 +194,93 @@ check("query authorises (compatibility)", isCronRequest(mkReq("https://x.test/ap
 check("wrong header refused", isCronRequest(mkReq("https://x.test/api/run", { "x-cron-secret": "nope" }), "s3"), false);
 check("empty CRON_SECRET never authorises", isCronRequest(mkReq("https://x.test/api/run", { "x-cron-secret": "" }), ""), false);
 
+// ---------- Client registry: roster <-> shared clients table ----------
+// A fake Supabase REST endpoint so the mapping, the upsert, the archive
+// and the one-off import can be checked without a network.
+globalThis.Netlify = { env: { get: (k) => ({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_KEY: "k" })[k] || "" } };
+const reg = await import("../netlify/edge-functions/lib/registry.js");
+const db = { rows: [], calls: [] };
+let nextId = 1;
+globalThis.fetch = async (url, opts = {}) => {
+  const u = new URL(url); const m = (opts.method || "GET").toUpperCase();
+  db.calls.push(m + " " + u.pathname + u.search);
+  const body = opts.body ? JSON.parse(opts.body) : null;
+  const reply = (obj, status = 200) => new Response(JSON.stringify(obj), { status });
+  const idEq = (u.searchParams.get("id") || "").replace(/^eq\./, "");
+  const statusIn = u.searchParams.get("status") || "";
+  if (m === "GET") {
+    let rows = db.rows.slice();
+    if (idEq) rows = rows.filter(r => r.id === idEq);
+    if (statusIn.startsWith("in.")) { const set = statusIn.slice(4, -1).split(","); rows = rows.filter(r => set.includes(r.status || "active")); }
+    return reply(rows);
+  }
+  if (m === "POST") {
+    if (db.rows.some(r => r.name_key === body.name.toLowerCase().trim())) return reply({ message: "duplicate key" }, 409);
+    const row = Object.assign({ id: "id" + (nextId++), competitors: ["rival"], targets: { sov: 20 } }, body, { name_key: body.name.toLowerCase().trim() });
+    db.rows.push(row); return reply([row], 201);
+  }
+  if (m === "PATCH") {
+    const row = db.rows.find(r => r.id === idEq); if (!row) return reply([], 200);
+    Object.assign(row, body); if (body.name) row.name_key = body.name.toLowerCase().trim();
+    return reply([row]);
+  }
+  return reply({ message: "unsupported" }, 405);
+};
+
+const planner = { name: "Macc Care", industry: "Care homes - Midlands", location: "Solihull, Birmingham", website: "macccare.com", description: "Care group", topics: "dementia care, CQC", tone: "Warm", avoid: "politics", budget: "mid", briefing: "Awards push", prospect: false, active: true };
+const row = reg.toRow(planner);
+check("roster -> row maps the Planner fields", [row.sector, row.locations, row.domain, row.no_go_areas, row.budget_band, row.current_priorities, row.status, row.is_prospect],
+  ["Care homes - Midlands", ["Solihull", "Birmingham"], "macccare.com", "politics", "mid", "Awards push", "active", false]);
+check("resting client becomes former and leaves the sweep", (() => { const r = reg.toRow({ name: "X", active: false }); return [r.status, r.sweep_enabled, !!r.archived_at]; })(), ["former", false, true]);
+check("prospect flag becomes prospect status", reg.toRow({ name: "Y", prospect: true }).status, "prospect");
+const back = reg.toPlanner(Object.assign({ id: "abc" }, row));
+check("row -> roster round-trips", back, Object.assign({ id: "abc" }, planner));
+check("archived rows read as inactive", reg.toPlanner({ name: "Z", status: "archived" }).active, false);
+check("nameKey ignores case and spacing", reg.nameKey("  Macc CARE "), "macc care");
+
+// Import: existing client keeps its own values, blanks are filled, new client added
+db.rows.push({ id: "id0", name: "Cinnamon Care", name_key: "cinnamon care", status: "active", sector: "", tone: "Premium", competitors: ["Barchester"], targets: { sov: 30 }, locations: [] });
+const imp = await reg.importRoster([planner, { name: "cinnamon care", industry: "Premium care", tone: "Should not overwrite", location: "UK" }]);
+check("import adds the missing client and fills blanks on the existing one", imp, { added: 1, filled: 1 });
+const cin = db.rows.find(r => r.name_key === "cinnamon care");
+check("import fills the blank sector but keeps the existing tone", [cin.sector, cin.tone, cin.locations], ["Premium care", "Premium", ["UK"]]);
+check("import leaves Insight-owned fields alone", [cin.competitors, cin.targets], [["Barchester"], { sov: 30 }]);
+check("import is safe to run twice", await reg.importRoster([planner]), { added: 0, filled: 0 });
+
+// Fetch: archived clients hidden, others in roster shape
+db.rows.push({ id: "id9", name: "Old Co", name_key: "old co", status: "archived" });
+const roster = await reg.fetchRoster();
+check("fetchRoster hides archived clients", roster.map(r => r.name).sort(), ["Cinnamon Care", "Macc Care"]);
+check("fetchRoster returns roster shape", roster.find(r => r.name === "Macc Care").topics, "dementia care, CQC");
+
+// Save: unchanged rows skipped, edits patched, new added, named client archived, missing client NOT archived
+db.calls.length = 0;
+const edited = roster.map(r => r.name === "Macc Care" ? Object.assign({}, r, { tone: "Warmer" }) : r);
+edited.push({ name: "New Prospect", prospect: true });
+const saved = await reg.saveRoster(edited.filter(r => r.name !== "Cinnamon Care"), { archiveNames: ["Macc Care"] });
+check("save patches the edit and adds the new client only", saved.saved, 2);
+check("save archives nobody for being absent from the list", db.rows.find(r => r.name_key === "cinnamon care").status, "active");
+check("archive is refused for a client still in the list", [saved.archived, db.rows.find(r => r.name_key === "macc care").status], [0, "active"]);
+const saved2 = await reg.saveRoster(edited.filter(r => r.name !== "Macc Care"), { archiveNames: ["Macc Care"] });
+check("named archive lands once the client is out of the list", [saved2.archived, db.rows.find(r => r.name_key === "macc care").status, db.rows.find(r => r.name_key === "macc care").sweep_enabled], [1, "archived", false]);
+check("no PATCH for the unchanged client", db.calls.filter(c => c.startsWith("PATCH") && c.includes("id0")).length, 0);
+check("Insight fields survive a Planner save", db.rows.find(r => r.name_key === "macc care").competitors, ["rival"]);
+
+// An archived client is never touched by a save (so "Add missing clients" cannot resurrect one)
+const s3 = await reg.saveRoster([{ name: "Macc Care", active: true, tone: "Back?" }]);
+check("archived client skipped and reported", [s3.saved, s3.skippedArchived, db.rows.find(r => r.name_key === "macc care").status], [0, ["Macc Care"], "archived"]);
+// Rename by id updates the row rather than creating a second client
+const cinId = db.rows.find(r => r.name_key === "cinnamon care").id;
+const s4 = await reg.saveRoster([{ id: cinId, name: "Cinnamon Care Collection", industry: "Premium care", tone: "Premium", location: "UK" }]);
+check("rename by id patches the same row", [s4.saved, db.rows.filter(r => /cinnamon/.test(r.name_key)).length, db.rows.find(r => r.id === cinId).name], [1, 1, "Cinnamon Care Collection"]);
+let clashMsg = "";
+try { await reg.saveRoster([{ id: cinId, name: "New Prospect" }]); } catch (e) { clashMsg = e.message; }
+check("rename onto another client's name refused", /already the name/.test(clashMsg), true);
+// A former client marked active again rejoins the sweep
+await reg.saveRoster([{ id: cinId, name: "Cinnamon Care Collection", industry: "Premium care", tone: "Premium", location: "UK", active: false }]);
+check("resting sets former and sweep off", [db.rows.find(r => r.id === cinId).status, db.rows.find(r => r.id === cinId).sweep_enabled], ["former", false]);
+await reg.saveRoster([{ id: cinId, name: "Cinnamon Care Collection", industry: "Premium care", tone: "Premium", location: "UK", active: true }]);
+check("reactivating sets active and sweep on", [db.rows.find(r => r.id === cinId).status, db.rows.find(r => r.id === cinId).sweep_enabled], ["active", true]);
+
 console.log(failures ? "\n" + failures + " failure(s)." : "\nAll tests passed.");
 process.exit(failures ? 1 : 0);

@@ -1,3 +1,13 @@
+# Update - 18 September 2026 (v18) - one client list for both suites
+
+- The Clients tab now reads and writes the shared `clients` table in Supabase (the same table the Insight Suite tools and the Insight homepage's Manage clients page use). The News Jacker, Idea Jacker and Roots keep fetching `?store=clients` from here, so they see the same list without any change.
+- SETUP: add `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` to this site's Netlify environment variables (the same values the Insight sites use) and run `SUITE-UPGRADE-2026-09b.sql` in Supabase first. Without them the Planner carries on with its own copy exactly as before, and the Clients tab says so.
+- First read after setup copies the Planner's own roster into the table: clients not there are added, clients already there get blank profile fields filled. Nothing is overwritten or deleted. Runs once (a flag is kept in Blobs) and is safe if it runs again.
+- Field mapping is in `netlify/edge-functions/lib/registry.js`: industry = sector, location = locations, website = domain, avoid = no-go areas, budget = budget band, briefing = current priorities. Fields the Planner does not show (competitors, targets, question sets, owners, tracking settings) are never touched by a Planner save.
+- "Delete" is now "Archive": the client leaves every tool's list; the row and its history stay. A save never archives a client just for being absent from the list, so a client a colleague adds elsewhere while the tab is open is safe.
+- The page sends only the client you changed (matched by id, then name), so a colleague's edits made elsewhere are never overwritten by a stale tab. Archived clients are never touched by a Planner save - "Add missing clients" cannot bring one back by accident; reactivate from Manage clients instead. Renaming a client updates its record rather than creating a second one, and a rename onto a name another client uses is refused. A resting client ticked active again rejoins the monthly sweep.
+- Tests: 95 pass (was 72).
+
 # Update - 12 September 2026
 
 - 17 Sep: (cite ...) markup from the web-search model is stripped from live-search and Scout results before they are read.

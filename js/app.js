@@ -3,7 +3,7 @@
 // this page reads and writes it through /api/data and runs the engine
 // through /api/run, which streams progress lines as it works.
 
-const FP_VERSION = 'v17';
+const FP_VERSION = 'v18';
 // The password never lives in this file. What you type (or what arrives
 // from the suite homepage via #k=) is held for the session and checked
 // server-side against /api/data?store=verify.
@@ -195,20 +195,36 @@ if (wantedTab) {
 }
 
 // ============ Data plumbing ============
+// Where the client list came from: "registry" (the shared clients table
+// every tool reads) or "local" (this site's own copy, used only when the
+// shared table cannot be reached). Shown on the Clients tab.
+let clientsSource = '';
+function clientsSourceNote() {
+  const el = $('#clients-source');
+  if (!el) return;
+  el.textContent = clientsSource === 'registry'
+    ? 'This is the shared client list. Changes here show in every tool in both suites.'
+    : clientsSource === 'local'
+      ? 'Shared client list not reachable - showing this site\'s own copy. Changes save here only until the shared list is back.'
+      : '';
+}
+
 async function loadStore(name) {
   const res = await fetch('/api/data?store=' + name, { headers: { 'x-password': suiteKey } });
   if (!res.ok) throw new Error('Could not load ' + name);
+  if (name === 'clients') { clientsSource = res.headers.get('x-clients-source') || ''; clientsSourceNote(); }
   return res.json();
 }
 
-async function saveStore(name, value) {
-  const res = await fetch('/api/data?store=' + name, {
+async function saveStore(name, value, query) {
+  const res = await fetch('/api/data?store=' + name + (query || ''), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'x-password': suiteKey },
     body: JSON.stringify(value)
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Save failed');
+  if (name === 'clients' && data.source) { clientsSource = data.source; clientsSourceNote(); }
   return data;
 }
 
@@ -371,7 +387,7 @@ function renderClients() {
       <td class="hide-mobile muted">${escapeHtml((c.tone || '').slice(0, 70))}</td>
       <td class="row-actions">
         <button data-edit-client="${i}">Edit</button>
-        <button class="del" data-del-client="${i}">Delete</button>
+        <button class="del" data-del-client="${i}" title="Removes the client from every tool's list. History is kept.">Archive</button>
       </td>
     </tr>`).join('');
   $('#clients-table').innerHTML = `
@@ -453,7 +469,7 @@ document.addEventListener('click', async (e) => {
         if (!have.has(norm(m.name))) { clients.push(m); added.push(m.name); }
       }
       if (added.length) {
-        await persist('clients', clients, renderClients);
+        await persistClients(clients.filter(c => added.includes(c.name)));
         alert('Added ' + added.length + ' client(s) from the master list:\n' + added.join('\n') + '\n\nNote: this adds clients missing from the roster. It never changes clients you already have.');
       } else {
         alert('Every master-list client is already on the roster. Nothing added. (This button adds missing clients; it never changes existing ones.)');
@@ -466,9 +482,10 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.editClient !== undefined) { const i = +t.dataset.editClient; $('#client-form').innerHTML = clientFormHTML(clients[i], i); $('#client-form').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   if (t.dataset.delClient !== undefined) {
     const i = +t.dataset.delClient;
-    if (confirm('Delete ' + clients[i].name + ' from the roster?')) {
+    if (confirm('Archive ' + clients[i].name + '? They leave the client list in every tool. Their saved work and history are kept.')) {
+      const name = clients[i].name;
       clients.splice(i, 1);
-      await persist('clients', clients, renderClients);
+      await persistClients([], '&archive=' + encodeURIComponent(name));
     }
   }
   if (t.dataset.saveClient !== undefined) {
@@ -491,7 +508,7 @@ document.addEventListener('click', async (e) => {
     if (!c.name) { alert('A name is needed.'); return; }
     if (i === -1) clients.push(c); else clients[i] = c;
     $('#client-form').classList.add('hidden');
-    await persist('clients', clients, renderClients);
+    await persistClients([c]);
   }
 
   if (t.dataset.cancelForm === 'event') $('#event-form').classList.add('hidden');
@@ -506,9 +523,27 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-async function persist(name, value, rerender) {
+// Client saves: when the list is the shared one, send only the clients
+// that changed (the server matches them by id, then name) so nothing a
+// colleague edited elsewhere is touched. When the page holds this site's
+// own copy, the whole list is saved as before.
+async function persistClients(changed, query) {
+  const body = clientsSource === 'registry' ? changed : clients;
   try {
-    await saveStore(name, value);
+    const data = await saveStore('clients', body, query);
+    if (data && Array.isArray(data.skippedArchived) && data.skippedArchived.length) {
+      alert('Not saved: ' + data.skippedArchived.join(', ') + ' - archived in the shared list. Reactivate them from Manage clients on the Insight homepage first.');
+    }
+  } catch (err) {
+    alert('Save failed: ' + err.message + '. Your change is still on screen, try saving again.');
+  }
+  try { const fresh = await loadStore('clients'); if (Array.isArray(fresh) && fresh.length) clients = fresh; } catch (e) { /* keep what is on screen */ }
+  renderClients();
+}
+
+async function persist(name, value, rerender, query) {
+  try {
+    await saveStore(name, value, query);
     rerender();
   } catch (err) {
     alert('Save failed: ' + err.message + '. Your change is still on screen, try saving again.');
